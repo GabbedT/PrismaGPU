@@ -10,6 +10,7 @@ module clip_fraction_divider (
     input logic               data_valid_i,
 
     output logic [16:0] fraction_o,
+    output logic        fraction_inexact_o,
     output logic        data_valid_o,
     output logic        invalid_edge_o,
     output logic        idle_o
@@ -101,9 +102,11 @@ module clip_fraction_divider (
                         invalid_edge_NXT = 1'b1;
                     end else if (plane_start_i == '0) begin
                         fraction_NXT = '0;
+                        remainder_NXT = '0;
                         data_valid_NXT = 1'b1;
                     end else if (plane_end_i == '0) begin
                         fraction_NXT = 17'h10000;
+                        remainder_NXT = '0;
                         data_valid_NXT = 1'b1;
                     end else if (plane_start_i[32] == plane_end_i[32]) begin
                         invalid_edge_NXT = 1'b1;
@@ -133,6 +136,10 @@ module clip_fraction_divider (
     end
 
     assign fraction_o = fraction_CRT;
+
+    /* Retained with the fraction until the next request. */
+    assign fraction_inexact_o = |remainder_CRT;
+
     assign data_valid_o = data_valid_CRT;
     assign invalid_edge_o = invalid_edge_CRT;
     assign idle_o = (state_CRT == IDLE);
