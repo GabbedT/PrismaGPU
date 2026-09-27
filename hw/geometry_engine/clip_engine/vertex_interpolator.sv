@@ -64,15 +64,26 @@ module vertex_interpolator (
     function automatic logic signed [31:0] interpolate_position (
         input logic signed [31:0] start_value,
         input logic signed [31:0] end_value,
-        input logic        [16:0] t
+        input logic        [16:0] t,
+        input logic               round_nearest
     );
         logic signed [32:0] delta;
         logic signed [50:0] product;
+        logic [31:0] integral;
+        logic integer_lsb, round_up, carry_in;
 
         delta = {end_value[31], end_value} - {start_value[31], start_value};
         product = delta * $signed({1'b0, t});
 
-        interpolate_position = start_value + (product >>> 16);
+        /* Tie parity belongs to the sum, not just the product. */
+        integer_lsb = start_value[0] ^ product[16];
+        round_up = round_nearest & product[15] & ((|product[14:0]) | integer_lsb);
+
+        /* Fold rounding into bit-zero carry to keep a single position adder. */
+        carry_in = (start_value[0] & product[16]) | (integer_lsb & round_up);
+        integral = {start_value[31:1], 1'b1} + {product[47:17], carry_in};
+
+        interpolate_position = {integral[31:1], (integer_lsb ^ round_up)};
     endfunction
 
 
@@ -107,7 +118,15 @@ module vertex_interpolator (
 //      INTERPOLATION PARAMETER CALCULATION
 //====================================================================================  
 
-    logic [16:0] t; logic valid, invalid_edge;
+    logic [16:0] t, fraction;
+    logic valid, invalid_edge, fraction_inexact;
+
+    /* Round t toward the inside endpoint; exact fractions stay unchanged */
+    always_ff @(posedge clk_i) begin
+        if (valid & !invalid_edge) begin
+            t <= fraction + {16'b0, (crt_distance[32] & fraction_inexact)};
+        end
+    end
 
     /* Calculate interpolation parameter in iterative division */
     clip_fraction_divider divider (
@@ -119,8 +138,9 @@ module vertex_interpolator (
 
         .data_valid_i ( start_i ),
 
-        .fraction_o   ( t     ),
-        .data_valid_o ( valid ),
+        .fraction_o         ( fraction         ),
+        .fraction_inexact_o ( fraction_inexact ),
+        .data_valid_o       ( valid            ),
 
         .invalid_edge_o ( invalid_edge ),
         .idle_o         (              )
@@ -133,8 +153,9 @@ module vertex_interpolator (
 
     logic signed [31:0] crt_pos, nxt_pos; logic [3:0] crt_col, nxt_col;
     logic signed [31:0] interpolated_position; logic [3:0] interpolated_color;
+    logic round_position;
 
-    assign interpolated_position = interpolate_position(crt_pos, nxt_pos, t);
+    assign interpolated_position = interpolate_position(crt_pos, nxt_pos, t, round_position);
 
     assign interpolated_color = interpolate_color(crt_col, nxt_col, t);
 
@@ -143,12 +164,20 @@ module vertex_interpolator (
 //      NEW VERTEX CALCULATION
 //==================================================================================== 
 
-    typedef enum logic [3:0] { IDLE, INTP_X, INTP_Y, INTP_Z, INTP_W, INTP_U, 
-                               INTP_V, INTP_R, INTP_G, INTP_B, INTP_A } fsm_state_t;
+    typedef enum logic [3:0] { 
+        IDLE, INTP_X, INTP_Y, INTP_Z, INTP_W, INTP_U, 
+        INTP_V, INTP_R, INTP_G, INTP_B, INTP_A 
+    } fsm_state_t;
 
     fsm_state_t state_CRT, state_NXT;
     vertex_t new_vertex_CRT, new_vertex_NXT;
     logic valid_CRT, valid_NXT;
+    logic signed [31:0] plane_w;
+
+    assign plane_w = new_vertex_CRT.pos.w;
+
+    /* Reuse the position multiplier; texture coordinates retain truncation. */
+    assign round_position = (state_CRT == INTP_X) | (state_CRT == INTP_Y) | (state_CRT == INTP_Z) | (state_CRT == INTP_W);
 
         always_ff @(posedge clk_i or negedge rst_n_i) begin
             if (!rst_n_i) begin
@@ -174,6 +203,8 @@ module vertex_interpolator (
             crt_col = '0;
             nxt_col = '0;
 
+            round_position = 1'b0;
+
             /* To save multipliers we use just two of them (one for xyzw and uv and one for rgba),
              * then interpolate each coordinate sequentially instead of in parallel */
             case (state_CRT)
@@ -189,6 +220,8 @@ module vertex_interpolator (
 
                     new_vertex_NXT.pos.x = interpolated_position;
 
+                    round_position = 1'b1;
+
                     state_NXT = INTP_Y;
                 end
 
@@ -198,13 +231,19 @@ module vertex_interpolator (
 
                     new_vertex_NXT.pos.y = interpolated_position;
 
+                    round_position = 1'b1;
+
                     state_NXT = INTP_Z;
                 end
 
                 INTP_Z: begin
                     crt_pos = crt_vertex_i.pos.z;
                     nxt_pos = nxt_vertex_i.pos.z;
+
                     new_vertex_NXT.pos.z = interpolated_position;
+
+                    round_position = 1'b1;
+
                     state_NXT = INTP_W;
                 end
 
@@ -214,6 +253,8 @@ module vertex_interpolator (
 
                     new_vertex_NXT.pos.w = interpolated_position;
 
+                    round_position = 1'b1;
+
                     state_NXT = INTP_U;
                 end
 
@@ -222,6 +263,21 @@ module vertex_interpolator (
                     nxt_pos = nxt_vertex_i.tex.u;
 
                     new_vertex_NXT.tex.u = interpolated_position;
+
+                    /* Snap from registered w, in parallel with texture interpolation. */
+                    case (plane_i)
+                        LEFT_PLANE: new_vertex_NXT.pos.x = -plane_w;
+
+                        RIGHT_PLANE: new_vertex_NXT.pos.x = plane_w;
+
+                        TOP_PLANE: new_vertex_NXT.pos.y = plane_w;
+
+                        BOTTOM_PLANE: new_vertex_NXT.pos.y = -plane_w;
+
+                        FAR_PLANE: new_vertex_NXT.pos.z = plane_w;
+
+                        NEAR_PLANE: new_vertex_NXT.pos.z = '0;
+                    endcase
 
                     state_NXT = INTP_V;
                 end
