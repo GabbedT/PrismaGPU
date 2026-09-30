@@ -8,3 +8,7 @@ clip_engine/vertex_interpolator.sv
 clip_engine/clipper.sv
 clip_engine/triangle_assembler.sv
 clip_engine/clip_engine.sv
+
+perspective_divide/reciprocal_lut.sv
+perspective_divide/reciprocal_divider.sv
+perspective_divide/perspective_divider.sv
