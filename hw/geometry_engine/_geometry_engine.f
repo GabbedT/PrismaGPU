@@ -1,10 +1,10 @@
 matrix_engine/line_multiplier.sv
 matrix_engine/matrix_engine.sv
 
+clip_engine/clip_vertex_fifo.sv
 clip_engine/clip_tester.sv
 clip_engine/fractional_divider.sv
 clip_engine/vertex_interpolator.sv
 clip_engine/clipper.sv
 clip_engine/triangle_assembler.sv
 clip_engine/clip_engine.sv
-../../ZenithSoC/hw/common/synchronous_buffer.sv

@@ -124,30 +124,31 @@ module clipper (
     logic crt_on_plane, nxt_on_plane;
 
     clip_tester crt_tester (
-        .x_i ( crt_vertex_CRT.pos.x ),
-        .y_i ( crt_vertex_CRT.pos.y ),
-        .z_i ( crt_vertex_CRT.pos.z ),
-        .w_i ( crt_vertex_CRT.pos.w ),
+        .x_i ( crt_vertex_NXT.pos.x ),
+        .y_i ( crt_vertex_NXT.pos.y ),
+        .z_i ( crt_vertex_NXT.pos.z ),
+        .w_i ( crt_vertex_NXT.pos.w ),
 
         .clip_code_o ( crt_clip_code )
     );
 
     clip_tester nxt_tester (
-        .x_i ( nxt_vertex_CRT.pos.x ),
-        .y_i ( nxt_vertex_CRT.pos.y ),
-        .z_i ( nxt_vertex_CRT.pos.z ),
-        .w_i ( nxt_vertex_CRT.pos.w ),
+        .x_i ( nxt_vertex_NXT.pos.x ),
+        .y_i ( nxt_vertex_NXT.pos.y ),
+        .z_i ( nxt_vertex_NXT.pos.z ),
+        .w_i ( nxt_vertex_NXT.pos.w ),
 
         .clip_code_o ( nxt_clip_code )
     );
 
-    /* Check if it's inside a certain plane */
-    assign crt_is_inside = !crt_clip_code[plane_CRT];
-    assign nxt_is_inside = !nxt_clip_code[plane_CRT];
-
-    /* Check if points lays on a certain plane */
-    assign crt_on_plane = on_plane(plane_CRT, crt_vertex_CRT.pos);
-    assign nxt_on_plane = on_plane(plane_CRT, nxt_vertex_CRT.pos);
+    /* Classify alongside the vertex registers, before FIFO write control. */
+    always_ff @(posedge clk_i) begin
+        crt_is_inside <= !crt_clip_code[plane_NXT];
+        nxt_is_inside <= !nxt_clip_code[plane_NXT];
+        
+        crt_on_plane <= on_plane(plane_NXT, crt_vertex_NXT.pos);
+        nxt_on_plane <= on_plane(plane_NXT, nxt_vertex_NXT.pos);
+    end
 
 
 //====================================================================================

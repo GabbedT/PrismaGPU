@@ -8,26 +8,93 @@ module clip_engine (
     input logic rst_n_i,
     input logic stall_i,
 
-    /* Triangle coming from triangle assembler */
+    /* Input transfer: valid_i && !stall_o. Hold data while stalled. */
     input triangle_t triangle_i,
     input logic valid_i,
+    output logic stall_o,
 
-    /* Triangle after clipping */
+    /* Output transfer: valid_o && !stall_i */
     output triangle_t triangle_o,
     output logic valid_o,
 
-    /* Status */
+    /* One completion per input, including discarded triangles */
     output logic done_o,
     output logic error_o
 );
 
 //====================================================================================
+//      TRANSACTION CONTROL
+//====================================================================================
+
+    typedef enum logic [1:0] { IDLE, CLIPPING, ASSEMBLING } fsm_state_t;
+
+    fsm_state_t state_CRT, state_NXT;
+    logic input_accept;
+    logic error_CRT;
+
+    /* Keep FIFO ownership until the entire polygon has been consumed. */
+    assign stall_o = !rst_n_i | (state_CRT != IDLE) | stall_i;
+    assign input_accept = valid_i & !stall_o;
+
+    always_ff @(posedge clk_i or negedge rst_n_i) begin
+        if (!rst_n_i) begin
+            state_CRT <= IDLE;
+            error_CRT <= 1'b0;
+        end else begin
+            state_CRT <= state_NXT;
+
+            if (state_CRT == IDLE) begin
+                error_CRT <= 1'b0;
+            end else begin
+                error_CRT <= error_CRT | clipper_error | assembler_error;
+            end
+        end
+    end
+
+    always_comb begin
+        state_NXT = state_CRT;
+        done_o = 1'b0;
+
+        case (state_CRT)
+            IDLE: begin
+                if (input_accept) begin
+                    if (triangle_clip) begin
+                        state_NXT = CLIPPING;
+                    end else begin
+                        done_o = 1'b1;
+                    end
+                end
+            end
+
+            CLIPPING: begin
+                if (clipper_start_assemble) begin
+                    state_NXT = ASSEMBLING;
+                end else if (clipper_idle) begin
+                    /* Cleanup also completes empty or degenerate polygons. */
+                    state_NXT = IDLE;
+                    done_o = rst_n_i;
+                end
+            end
+
+            ASSEMBLING: begin
+                if (assembler_done) begin
+                    state_NXT = IDLE;
+                    done_o = rst_n_i;
+                end
+            end
+
+            default: begin
+                state_NXT = IDLE;
+            end
+        endcase
+    end
+
+
+//====================================================================================
 //      CLIP TESTER
 //====================================================================================
 
-    logic [5:0] vtx0_clip_code;
-    logic [5:0] vtx1_clip_code;
-    logic [5:0] vtx2_clip_code;
+    logic [5:0] vtx0_clip_code, vtx1_clip_code, vtx2_clip_code;
 
     clip_tester vtx0_tester (
         .x_i         ( triangle_i.vtx[0].pos.x ),
@@ -53,50 +120,34 @@ module clip_engine (
         .clip_code_o ( vtx2_clip_code          )
     );
 
-    logic triangle_inside;
-    logic triangle_outside;
-    logic triangle_clip;
-    logic direct_valid;
+    logic triangle_inside, triangle_outside, triangle_clip, direct_valid;
 
     /* Trivial accept and reject tests */
     assign triangle_inside  = (vtx0_clip_code | vtx1_clip_code | vtx2_clip_code) == '0;
-    assign triangle_outside =  (vtx0_clip_code & vtx1_clip_code & vtx2_clip_code) != '0;
+    assign triangle_outside = (vtx0_clip_code & vtx1_clip_code & vtx2_clip_code) != '0;
     assign triangle_clip    = !triangle_inside & !triangle_outside;
-    assign direct_valid     = valid_i & triangle_inside;
+
+    assign direct_valid = (state_CRT == IDLE) & valid_i & triangle_inside;
 
 
 //====================================================================================
 //      VERTEX BUFFER
 //====================================================================================
 
-    localparam integer VERTEX_WIDTH = $bits(vertex_t);
+    localparam integer BUFFER_DEPTH = 9;
 
-    logic buffer_empty;
-    logic buffer_full;
-    logic buffer_write;
-    logic buffer_read;
-    logic [VERTEX_WIDTH - 1:0] buffer_write_data;
-    logic [VERTEX_WIDTH - 1:0] buffer_read_data;
+    logic buffer_empty, buffer_full, buffer_write, buffer_read;
+    vertex_t fifo_vtx_read, fifo_vtx_write;
 
-    vertex_t fifo_vtx_read;
-    vertex_t fifo_vtx_write;
-
-    assign fifo_vtx_read = buffer_read_data;
-    assign buffer_write_data = fifo_vtx_write;
-
-    synchronous_buffer #(
-        .BUFFER_DEPTH           ( 9            ),
-        .DATA_WIDTH             ( VERTEX_WIDTH ),
-        .FIRST_WORD_FALL_TROUGH ( 1            )
-    ) vertex_buffer (
+    clip_vertex_fifo vertex_buffer (
         .clk_i        ( clk_i              ),
         .rst_n_i      ( rst_n_i            ),
         .write_i      ( buffer_write       ),
         .read_i       ( buffer_read        ),
         .empty_o      ( buffer_empty       ),
         .full_o       ( buffer_full        ),
-        .write_data_i ( buffer_write_data  ),
-        .read_data_o  ( buffer_read_data   )
+        .write_data_i ( fifo_vtx_write     ),
+        .read_data_o  ( fifo_vtx_read      )
     );
 
 
@@ -104,14 +155,10 @@ module clip_engine (
 //      CLIPPER
 //====================================================================================
 
-    logic clipper_start;
-    logic clipper_fifo_write;
-    logic clipper_fifo_read;
-    logic clipper_start_assemble;
-    logic clipper_idle;
-    logic clipper_error;
+    logic clipper_start, clipper_fifo_write, clipper_fifo_read;
+    logic clipper_start_assemble, clipper_idle, clipper_error;
 
-    assign clipper_start = valid_i & triangle_clip & clipper_idle;
+    assign clipper_start = input_accept & triangle_clip;
 
     clipper triangle_clipper (
         .clk_i            ( clk_i                  ),
@@ -134,10 +181,7 @@ module clip_engine (
 //====================================================================================
 
     triangle_t assembled_triangle;
-    logic assembled_valid;
-    logic assembler_fifo_read;
-    logic assembler_done;
-    logic assembler_error;
+    logic assembled_valid, assembler_fifo_read, assembler_done, assembler_error;
 
     triangle_assembler assembler (
         .clk_i        ( clk_i                  ),
@@ -148,7 +192,7 @@ module clip_engine (
         .fifo_empty_i ( buffer_empty           ),
         .fifo_read_o  ( assembler_fifo_read    ),
         .triangle_o   ( assembled_triangle     ),
-        .valid_o      ( assembled_valid       ),
+        .valid_o      ( assembled_valid        ),
         .done_o       ( assembler_done         ),
         .error_o      ( assembler_error        )
     );
@@ -158,27 +202,35 @@ module clip_engine (
 //      BUFFER CONTROL
 //====================================================================================
 
-    /* Clipper and assembler never read the buffer at the same time */
-    assign buffer_write = clipper_fifo_write;
-    assign buffer_read  = clipper_fifo_read | assembler_fifo_read;
+    /* Downstream stall stops only the assembler; clipping can finish. */
+    assign buffer_write = clipper_fifo_write & (state_CRT == CLIPPING);
+
+        always_comb begin
+            buffer_read = 1'b0;
+
+            if (state_CRT == CLIPPING) begin
+                buffer_read = clipper_fifo_read;
+            end else if (state_CRT == ASSEMBLING) begin
+                buffer_read = assembler_fifo_read;
+            end
+        end
 
 
 //====================================================================================
 //      OUTPUT MUX
 //====================================================================================
 
-    always_comb begin
-        /* The assembler triangle has priority while clipping is active */
-        if (assembled_valid) begin
-            triangle_o = assembled_triangle;
-        end else begin
-            triangle_o = triangle_i;
+        always_comb begin
+            /* Fan order is (v0, v1, v2), (v0, v2, v3), ... */
+            if (state_CRT == ASSEMBLING) begin
+                triangle_o = assembled_triangle;
+            end else begin
+                triangle_o = triangle_i;
+            end
         end
-    end
 
-    assign valid_o = direct_valid | assembled_valid;
-    assign done_o = assembler_done | direct_valid | (valid_i & triangle_outside);
-    assign error_o = clipper_error | assembler_error;
+    assign valid_o = direct_valid | ((state_CRT == ASSEMBLING) & assembled_valid);
+    assign error_o = (state_CRT != IDLE) & (error_CRT | clipper_error | assembler_error);
 
 endmodule : clip_engine
 
