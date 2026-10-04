@@ -16,7 +16,7 @@ module triangle_assembler (
     output logic fifo_read_o,
 
     /* Generated triangle */
-    output triangle_t triangle_o,
+    output vertex_t vertex_o,
     output logic valid_o,
 
     /* Status */
@@ -35,7 +35,7 @@ module triangle_assembler (
     fsm_state_t state_CRT, state_NXT;
 
     vertex_t pivot_CRT, pivot_NXT, vtx_CRT, vtx_NXT;
-    logic produced_CRT, produced_NXT;
+    logic produced_CRT, produced_NXT, popped_CRT, popped_NXT;
 
         always_ff @(posedge clk_i or negedge rst_n_i) begin
             if (!rst_n_i) begin
@@ -48,6 +48,7 @@ module triangle_assembler (
         end
 
         always_ff @(posedge clk_i) begin
+            popped_CRT <= popped_NXT;
             pivot_CRT <= pivot_NXT;
             vtx_CRT <= vtx_NXT;
         end
@@ -59,10 +60,11 @@ module triangle_assembler (
 
     always_comb begin : fsm_logic
         /* Default values */
+        produced_NXT = produced_CRT;
+        popped_NXT = popped_CRT;
         state_NXT = state_CRT;
         pivot_NXT = pivot_CRT;
         vtx_NXT = vtx_CRT;
-        produced_NXT = produced_CRT;
 
         fifo_read_o = 1'b0;
         triangle_o = '0;
@@ -83,6 +85,8 @@ module triangle_assembler (
                         state_NXT = POP_PIVOT;
                     end
                 end
+
+                popped_NXT = 1'b0;
             end
 
             POP_PIVOT: begin
@@ -95,8 +99,14 @@ module triangle_assembler (
                 end else if (!stall_i) begin
                     state_NXT = POP_VTX1;
 
-                    pivot_NXT = fifo_vtx_i;
-                    fifo_read_o = 1'b1;
+                    if (!popped_CRT) begin
+                        pivot_NXT = fifo_vtx_i;
+                        fifo_read_o = !popped_CRT;
+
+                        popped_NXT = 1'b1;
+                    end
+
+                    vertex_o = popped_CRT ? pivot_CRT : fifo_vtx_i;
                 end
             end
 
@@ -110,8 +120,9 @@ module triangle_assembler (
                 end else if (!stall_i) begin
                     state_NXT = POP_VTX2;
 
-                    vtx_NXT = fifo_vtx_i;
                     fifo_read_o = 1'b1;
+
+                    vertex_o = fifo_vtx_i;
                 end
             end
 
@@ -123,15 +134,14 @@ module triangle_assembler (
                     done_o = 1'b1;
                     error_o = !produced_CRT;
                 end else begin
-                    triangle_o.vtx[0] = pivot_CRT;
-                    triangle_o.vtx[1] = vtx_CRT;
-                    triangle_o.vtx[2] = fifo_vtx_i;
+                    vertex_o = fifo_vtx_i;
 
                     valid_o = 1'b1;
 
                     if (!stall_i) begin
+                        state_NXT = POP_PIVOT;
+
                         fifo_read_o = 1'b1;
-                        vtx_NXT = fifo_vtx_i;
 
                         /* First triangle produced */
                         produced_NXT = 1'b1;

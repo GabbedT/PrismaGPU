@@ -14,7 +14,7 @@ module clip_engine (
     output logic stall_o,
 
     /* Output transfer: valid_o && !stall_i */
-    output triangle_t triangle_o,
+    output vertex_t vertex_overtex_o,
     output logic valid_o,
 
     /* One completion per input, including discarded triangles */
@@ -180,7 +180,7 @@ module clip_engine (
 //      TRIANGLE ASSEMBLER
 //====================================================================================
 
-    triangle_t assembled_triangle;
+    vertex_t assembled_vertex;
     logic assembled_valid, assembler_fifo_read, assembler_done, assembler_error;
 
     triangle_assembler assembler (
@@ -191,7 +191,7 @@ module clip_engine (
         .fifo_vtx_i   ( fifo_vtx_read          ),
         .fifo_empty_i ( buffer_empty           ),
         .fifo_read_o  ( assembler_fifo_read    ),
-        .triangle_o   ( assembled_triangle     ),
+        .vertex_o     ( assembled_vertex       ),
         .valid_o      ( assembled_valid        ),
         .done_o       ( assembler_done         ),
         .error_o      ( assembler_error        )
@@ -220,16 +220,60 @@ module clip_engine (
 //      OUTPUT MUX
 //====================================================================================
 
-        always_comb begin
-            /* Fan order is (v0, v1, v2), (v0, v2, v3), ... */
-            if (state_CRT == ASSEMBLING) begin
-                triangle_o = assembled_triangle;
-            end else begin
-                triangle_o = triangle_i;
+    typedef enum logic [1:0] {VTX0, VTX1, VXT2} select_state_t;
+
+    select_state_t select_state_CRT, select_state_NXT;
+
+        always_ff @(posedge clk_i) begin
+            if (!rst_n_i) begin
+                select_state_CRT <= VTX0;
+            end else if (!stall_i) begin
+                select_state_CRT <= select_state_NXT;
             end
         end
 
-    assign valid_o = direct_valid | ((state_CRT == ASSEMBLING) & assembled_valid);
+
+    logic vtx_valid;
+
+        always_comb begin
+            /* Default Value */
+            select_state_NXT = select_state_CRT;
+
+            vtx_valid = 1'b0;
+
+            case (select_state_CRT)
+                VTX0: begin
+                    if (direct_valid) begin
+                        state_NXT = VTX1;
+
+                        vtx_valid = 1'b1;
+                    end
+                end
+
+                VTX1: begin
+                    state_NXT = VTX2;
+
+                    vtx_valid = 1'b1;
+                end
+
+                VTX2: begin
+                    state_NXT = VTX0;
+
+                    vtx_valid = 1'b1;
+                end
+            endcase
+        end
+
+        always_comb begin
+            /* Fan order is (v0, v1, v2), (v0, v2, v3), ... */
+            if (state_CRT == ASSEMBLING) begin
+                vertex_o = assembled_vertex;
+            end else begin
+                vertex_o = triangle_i[select_state_CRT];
+            end
+        end
+
+    assign valid_o = vtx_valid | ((state_CRT == ASSEMBLING) & assembled_valid);
     assign error_o = (state_CRT != IDLE) & (error_CRT | clipper_error | assembler_error);
 
 endmodule : clip_engine
