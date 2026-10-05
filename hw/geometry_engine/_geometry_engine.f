@@ -1,6 +1,9 @@
 ../pkg/triangle_pkg.sv
 ../pkg/ge_registers_pkg.sv
 
+../common/triangle_buffer.sv
+../common/proc_triangle_buffer.sv
+
 matrix_engine/line_multiplier.sv
 matrix_engine/matrix_engine.sv
 
@@ -19,3 +22,5 @@ perspective_divide/perspective_divider.sv
 viewport_transform/viewport_transform.sv
 
 culling/cull_engine.sv
+
+triangle_pipeline.sv
