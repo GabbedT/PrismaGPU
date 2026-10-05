@@ -4,6 +4,7 @@
 module viewport_transform (
     input logic clk_i,
     input logic rst_n_i,
+    input logic stall_i,
 
     input vertex_t vertex_i,
     input logic valid_i,
@@ -35,23 +36,25 @@ module viewport_transform (
     logic [$bits(vertex_i.col.r) - 1:0] r_ff, g_ff, b_ff, a_ff;
 
         always_ff @(posedge clk_i) begin
-            x_scaled_ff <= x_scaled;
-            y_scaled_ff <= y_scaled;
-            z_ff <= vertex_i.pos.z;
+            if (!stall_i) begin
+                x_scaled_ff <= x_scaled;
+                y_scaled_ff <= y_scaled;
+                z_ff <= vertex_i.pos.z;
 
-            u_ff <= vertex_i.tex.u;
-            v_ff <= vertex_i.tex.v;
+                u_ff <= vertex_i.tex.u;
+                v_ff <= vertex_i.tex.v;
 
-            r_ff <= vertex_i.col.r;
-            g_ff <= vertex_i.col.g;
-            b_ff <= vertex_i.col.b;
-            a_ff <= vertex_i.col.a;
+                r_ff <= vertex_i.col.r;
+                g_ff <= vertex_i.col.g;
+                b_ff <= vertex_i.col.b;
+                a_ff <= vertex_i.col.a;
+            end
         end
 
         always_ff @(posedge clk_i) begin
             if (!rst_n_i) begin
                 valid_o <= 1'b0;
-            end else begin
+            end else if (!stall_i) begin
                 valid_o <= valid_i;
             end
         end

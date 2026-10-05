@@ -4,6 +4,7 @@
 module clip_fraction_divider (
     input logic               clk_i,
     input logic               rst_n_i,
+    input logic               stall_i,
 
     input logic signed [32:0] plane_start_i,
     input logic signed [32:0] plane_end_i,
@@ -36,7 +37,7 @@ module clip_fraction_divider (
             state_CRT <= IDLE;
             data_valid_CRT <= 1'b0;
             invalid_edge_CRT <= 1'b0;
-        end else begin
+        end else if (!stall_i) begin
             state_CRT <= state_NXT;
             data_valid_CRT <= data_valid_NXT;
             invalid_edge_CRT <= invalid_edge_NXT;
@@ -44,7 +45,7 @@ module clip_fraction_divider (
     end
 
     always_ff @(posedge clk_i) begin
-        if (rst_n_i) begin
+        if (rst_n_i & !stall_i) begin
             remainder_CRT <= remainder_NXT;
             denominator_CRT <= denominator_NXT;
             fraction_CRT <= fraction_NXT;

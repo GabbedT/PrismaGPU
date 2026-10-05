@@ -38,7 +38,7 @@ module clip_engine (
         if (!rst_n_i) begin
             state_CRT <= IDLE;
             error_CRT <= 1'b0;
-        end else begin
+        end else if (!stall_i) begin
             state_CRT <= state_NXT;
 
             if (state_CRT == IDLE) begin
@@ -88,6 +88,10 @@ module clip_engine (
                 state_NXT = IDLE;
             end
         endcase
+
+        if (stall_i) begin
+            done_o = 1'b0;
+        end
     end
 
 
@@ -164,6 +168,7 @@ module clip_engine (
     clipper triangle_clipper (
         .clk_i            ( clk_i                  ),
         .rst_n_i          ( rst_n_i                ),
+        .stall_i          ( stall_i                ),
         .triangle_i       ( triangle_i             ),
         .start_i          ( clipper_start          ),
         .fifo_vtx_read_i  ( fifo_vtx_read          ),
@@ -203,15 +208,15 @@ module clip_engine (
 //      BUFFER CONTROL
 //====================================================================================
 
-    /* Downstream stall stops only the assembler; clipping can finish. */
-    assign buffer_write = clipper_fifo_write & (state_CRT == CLIPPING);
+    /* Freeze FIFO ownership and contents with the clipping stages. */
+    assign buffer_write = clipper_fifo_write & (state_CRT == CLIPPING) & !stall_i;
 
         always_comb begin
             buffer_read = 1'b0;
 
-            if (state_CRT == CLIPPING) begin
+            if (!stall_i & (state_CRT == CLIPPING)) begin
                 buffer_read = clipper_fifo_read;
-            end else if (state_CRT == ASSEMBLING) begin
+            end else if (!stall_i & (state_CRT == ASSEMBLING)) begin
                 buffer_read = assembler_fifo_read;
             end
         end

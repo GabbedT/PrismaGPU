@@ -4,6 +4,7 @@
 module cull_engine (
     input logic clk_i,
     input logic rst_n_i,
+    input logic stall_i,
 
     /* Processed triangle */
     input proc_triangle_t triangle_i,
@@ -42,10 +43,12 @@ module cull_engine (
 
 
         always_ff @(posedge clk_i) begin
-            mul_1_ff <= mul_1;
-            mul_2_ff <= mul_2;
+            if (!stall_i) begin
+                mul_1_ff <= mul_1;
+                mul_2_ff <= mul_2;
 
-            triangle_o <= triangle_i;
+                triangle_o <= triangle_i;
+            end
         end
 
 
@@ -54,7 +57,7 @@ module cull_engine (
         always_ff @(posedge clk_i) begin
             if (!rst_n_i) begin
                 valid_ff <= 1'b0;
-            end else begin
+            end else if (!stall_i) begin
                 valid_ff <= valid_i;
             end
         end

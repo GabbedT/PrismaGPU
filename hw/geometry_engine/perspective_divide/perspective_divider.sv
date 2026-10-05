@@ -4,6 +4,7 @@
 module perspective_divider (
     input logic clk_i,
     input logic rst_n_i,
+    input logic stall_i,
 
     input vertex_t vertex_i,
     input logic valid_i,
@@ -44,7 +45,9 @@ module perspective_divider (
     vertex_t vertex_CRT;
 
         always_ff @(posedge clk_i) begin
-            vertex_CRT <= vertex_i;
+            if (!stall_i) begin
+                vertex_CRT <= vertex_i;
+            end
         end
 
 
@@ -57,6 +60,7 @@ module perspective_divider (
     reciprocal_divider divider (
         .clk_i        ( clk_i   ),
         .rst_n_i      ( rst_n_i ),
+        .stall_i      ( stall_i ),
 
         .divisor_i    ( vertex_i.pos.w ),
         .valid_i      ( valid_i        ),

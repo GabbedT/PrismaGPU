@@ -40,15 +40,17 @@ module triangle_assembler (
         if (!rst_n_i) begin
             state_CRT <= IDLE;
             produced_CRT <= 1'b0;
-        end else begin
+        end else if (!stall_i) begin
             state_CRT <= state_NXT;
             produced_CRT <= produced_NXT;
         end
     end
 
     always_ff @(posedge clk_i) begin
-        pivot_CRT <= pivot_NXT;
-        previous_CRT <= previous_NXT;
+        if (!stall_i) begin
+            pivot_CRT <= pivot_NXT;
+            previous_CRT <= previous_NXT;
+        end
     end
 
 
@@ -147,6 +149,11 @@ module triangle_assembler (
 
             default: state_NXT = IDLE;
         endcase
+
+        if (stall_i) begin
+            fifo_read_o = 1'b0;
+            done_o = 1'b0;
+        end
     end
 
 endmodule : triangle_assembler

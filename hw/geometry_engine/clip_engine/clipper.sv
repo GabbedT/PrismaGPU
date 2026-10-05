@@ -4,6 +4,7 @@
 module clipper (
     input logic clk_i,
     input logic rst_n_i,
+    input logic stall_i,
 
     /* Triangle coming from triangle buffer */
     input triangle_t triangle_i,
@@ -71,22 +72,24 @@ module clipper (
     always_ff @(posedge clk_i or negedge rst_n_i) begin
         if (!rst_n_i) begin
             state_CRT <= IDLE;
-        end else begin
+        end else if (!stall_i) begin
             state_CRT <= state_NXT;
         end
     end
 
     always_ff @(posedge clk_i) begin
-        triangle_CRT <= triangle_NXT;
-        plane_CRT <= plane_NXT;
-        closing_edge_CRT <= closing_edge_NXT;
-        source_count_CRT <= source_count_NXT;
-        destination_count_CRT <= destination_count_NXT;
-        read_count_CRT <= read_count_NXT;
-        init_count_CRT <= init_count_NXT;
-        first_vertex_CRT <= first_vertex_NXT;
-        crt_vertex_CRT <= crt_vertex_NXT;
-        nxt_vertex_CRT <= nxt_vertex_NXT;
+        if (!stall_i) begin
+            triangle_CRT <= triangle_NXT;
+            plane_CRT <= plane_NXT;
+            closing_edge_CRT <= closing_edge_NXT;
+            source_count_CRT <= source_count_NXT;
+            destination_count_CRT <= destination_count_NXT;
+            read_count_CRT <= read_count_NXT;
+            init_count_CRT <= init_count_NXT;
+            first_vertex_CRT <= first_vertex_NXT;
+            crt_vertex_CRT <= crt_vertex_NXT;
+            nxt_vertex_CRT <= nxt_vertex_NXT;
+        end
     end
 
 
@@ -102,6 +105,7 @@ module clipper (
     vertex_interpolator interpolator (
         .clk_i   ( clk_i   ),
         .rst_n_i ( rst_n_i ),
+        .stall_i ( stall_i ),
 
         .start_i ( interpolator_start ),
 
@@ -142,11 +146,13 @@ module clipper (
 
     /* Classify alongside the vertex registers, before FIFO write control. */
     always_ff @(posedge clk_i) begin
-        crt_is_inside <= !crt_clip_code[plane_NXT];
-        nxt_is_inside <= !nxt_clip_code[plane_NXT];
-        
-        crt_on_plane <= on_plane(plane_NXT, crt_vertex_NXT.pos);
-        nxt_on_plane <= on_plane(plane_NXT, nxt_vertex_NXT.pos);
+        if (!stall_i) begin
+            crt_is_inside <= !crt_clip_code[plane_NXT];
+            nxt_is_inside <= !nxt_clip_code[plane_NXT];
+
+            crt_on_plane <= on_plane(plane_NXT, crt_vertex_NXT.pos);
+            nxt_on_plane <= on_plane(plane_NXT, nxt_vertex_NXT.pos);
+        end
     end
 
 
@@ -341,6 +347,13 @@ module clipper (
 
             default: state_NXT = IDLE;
         endcase
+
+        if (stall_i) begin
+            fifo_write_o = 1'b0;
+            fifo_read_o = 1'b0;
+            interpolator_start = 1'b0;
+            start_assemble_o = 1'b0;
+        end
     end
 
     assign idle_o = (state_CRT == IDLE);

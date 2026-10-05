@@ -4,6 +4,7 @@
 module vertex_interpolator (
     input logic clk_i,
     input logic rst_n_i,
+    input logic stall_i,
 
     /* Start to interpolate */
     input logic start_i,
@@ -122,7 +123,7 @@ module vertex_interpolator (
 
     /* Round t toward the inside endpoint; exact fractions stay unchanged */
     always_ff @(posedge clk_i) begin
-        if (valid & !invalid_edge) begin
+        if (!stall_i & valid & !invalid_edge) begin
             t <= fraction + {16'b0, (crt_distance[32] & fraction_inexact)};
         end
     end
@@ -131,6 +132,7 @@ module vertex_interpolator (
     clip_fraction_divider divider (
         .clk_i   ( clk_i   ),
         .rst_n_i ( rst_n_i ),
+        .stall_i ( stall_i ),
 
         .plane_start_i ( crt_distance ),
         .plane_end_i   ( nxt_distance ),
@@ -182,14 +184,16 @@ module vertex_interpolator (
             if (!rst_n_i) begin
                 state_CRT <= IDLE;
                 valid_CRT <= 1'b0;
-            end else begin
+            end else if (!stall_i) begin
                 state_CRT <= state_NXT;
                 valid_CRT <= valid_NXT;
             end
         end
 
         always_ff @(posedge clk_i) begin
-            new_vertex_CRT <= new_vertex_NXT;
+            if (!stall_i) begin
+                new_vertex_CRT <= new_vertex_NXT;
+            end
         end
 
         always_comb begin

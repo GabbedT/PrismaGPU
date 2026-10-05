@@ -4,6 +4,7 @@
 module reciprocal_divider (
     input logic clk_i,
     input logic rst_n_i,
+    input logic stall_i,
 
     input logic [31:0] divisor_i,
     input logic valid_i,
@@ -95,8 +96,10 @@ module reciprocal_divider (
     logic signed [5:0] exponent_stg1; logic [24:0] shifted_fractional_stg1;
 
         always_ff @(posedge clk_i) begin
-            shifted_fractional_stg1 <= shifted_fractional;
-            exponent_stg1 <= exponent;
+            if (!stall_i) begin
+                shifted_fractional_stg1 <= shifted_fractional;
+                exponent_stg1 <= exponent;
+            end
         end
 
 
@@ -112,7 +115,7 @@ module reciprocal_divider (
         always_ff @(posedge clk_i) begin
             if (!rst_n_i) begin
                 valid_o <= 1'b0;
-            end else begin
+            end else if (!stall_i) begin
                 valid_o <= valid_i & !error_o;
             end
         end
