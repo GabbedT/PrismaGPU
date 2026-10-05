@@ -1,18 +1,21 @@
-`ifndef TRIANGLE_PIPELINE_SV
-    `define TRIANGLE_PIPELINE_SV
+`ifndef GEOMETRY_ENGINE_PIPELINE_SV
+    `define GEOMETRY_ENGINE_PIPELINE_SV
 
-module triangle_pipeline (
+module geometry_engine_pipeline (
     input logic clk_i,
     input logic rst_n_i,
     input logic stall_i,
 
-    /* Input transfer: valid_i && !stall_o */
+    /* Input transfer */
     input vertex_t vertex_i,
     input logic valid_i,
     output logic stall_o,
 
     /* Matrix stage */
     input logic [3:0][3:0][31:0] coefficient_i,
+    input logic forward_back_i,
+    output vertex_t forward_vertex_o,
+    output logic forward_valid_o,
 
     /* Viewport transform stage */
     input logic [31:0] width_screen_i,
@@ -57,21 +60,24 @@ module triangle_pipeline (
         .vertex_o      ( matrix_vertex )
     );
 
+    assign forward_valid_o = valid_i & forward_back_i;
+    assign forward_vertex_o = matrix_vertex;
+
 
     triangle_t buffered_triangle;
     logic triangle_valid, clip_done;
 
     /* Keep the triangle stable until clipping and assembly complete. */
     triangle_buffer input_buffer (
-        .clk_i      ( clk_i             ),
-        .rst_n_i    ( rst_n_i           ),
-        .stall_i    ( clip_stall        ),
-        .accept_i   ( clip_done         ),
-        .valid_i    ( valid_i           ),
-        .vertex_i   ( matrix_vertex     ),
-        .full_o     ( triangle_full     ),
-        .valid_o    ( triangle_valid    ),
-        .triangle_o ( buffered_triangle )
+        .clk_i      ( clk_i                     ),
+        .rst_n_i    ( rst_n_i                   ),
+        .stall_i    ( clip_stall                ),
+        .accept_i   ( clip_done                 ),
+        .valid_i    ( valid_i & !forward_back_i ),
+        .vertex_i   ( matrix_vertex             ),
+        .full_o     ( triangle_full             ),
+        .valid_o    ( triangle_valid            ),
+        .triangle_o ( buffered_triangle         )
     );
 
 
@@ -221,6 +227,6 @@ module triangle_pipeline (
             end
         end
 
-endmodule : triangle_pipeline
+endmodule : geometry_engine_pipeline
 
 `endif
