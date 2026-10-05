@@ -1,3 +1,6 @@
+../pkg/triangle_pkg.sv
+../pkg/ge_registers_pkg.sv
+
 matrix_engine/line_multiplier.sv
 matrix_engine/matrix_engine.sv
 
@@ -12,3 +15,7 @@ clip_engine/clip_engine.sv
 perspective_divide/reciprocal_lut.sv
 perspective_divide/reciprocal_divider.sv
 perspective_divide/perspective_divider.sv
+
+viewport_transform/viewport_transform.sv
+
+culling/cull_engine.sv
