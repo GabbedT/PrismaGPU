@@ -134,7 +134,7 @@ module triangle_pipeline (
 
 
     vertex_t perspective_vertex_ff;
-    logic perspective_valid_ff;
+    logic perspective_valid_ff, perspective_error_ff;
 
         always_ff @(posedge clk_i) begin
             if (!viewport_stall) begin
@@ -145,8 +145,10 @@ module triangle_pipeline (
         always_ff @(posedge clk_i) begin
             if (!rst_n_i) begin
                 perspective_valid_ff <= 1'b0;
+                perspective_error_ff <= 1'b0;
             end else if (!viewport_stall) begin
                 perspective_valid_ff <= perspective_valid;
+                perspective_error_ff <= perspective_valid & perspective_error;
             end
         end
 
@@ -156,7 +158,7 @@ module triangle_pipeline (
 //====================================================================================
 
     proc_vertex_t viewport_vertex;
-    logic viewport_valid;
+    logic viewport_valid, viewport_error;
 
     viewport_transform screen_transform (
         .clk_i           ( clk_i                 ),
@@ -164,10 +166,12 @@ module triangle_pipeline (
         .stall_i         ( viewport_stall        ),
         .vertex_i        ( perspective_vertex_ff ),
         .valid_i         ( perspective_valid_ff  ),
+        .error_i         ( perspective_error_ff  ),
         .width_screen_i  ( width_screen_i        ),
         .height_screen_i ( height_screen_i       ),
         .vertex_o        ( viewport_vertex       ),
-        .valid_o         ( viewport_valid        )
+        .valid_o         ( viewport_valid        ),
+        .error_o         ( viewport_error        )
     );
 
 
@@ -180,6 +184,7 @@ module triangle_pipeline (
         .stall_i    ( cull_stall         ),
         .accept_i   ( !cull_stall        ),
         .valid_i    ( viewport_valid     ),
+        .error_i    ( viewport_error     ),
         .vertex_i   ( viewport_vertex    ),
         .full_o     ( processed_full     ),
         .valid_o    ( processed_valid    ),
@@ -210,7 +215,7 @@ module triangle_pipeline (
             if (rst_n_i) begin
                 if (clip_error) begin
                     error_o = TRIANGLE_CLIP_ERROR;
-                end else if (clip_valid_ff & perspective_error) begin
+                end else if (perspective_valid & perspective_error) begin
                     error_o = TRIANGLE_PERSPECTIVE_ERROR;
                 end
             end

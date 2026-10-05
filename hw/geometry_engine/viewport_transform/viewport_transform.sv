@@ -8,6 +8,7 @@ module viewport_transform (
 
     input vertex_t vertex_i,
     input logic valid_i,
+    input logic error_i,
 
     /* Screen view to convert X, Y normalized into
      * screen coordinates */
@@ -15,7 +16,8 @@ module viewport_transform (
     input logic [31:0] height_screen_i,
 
     output proc_vertex_t vertex_o,
-    output logic valid_o
+    output logic valid_o,
+    output logic error_o
 );
 
     /* Viewport transform */
@@ -54,8 +56,10 @@ module viewport_transform (
         always_ff @(posedge clk_i) begin
             if (!rst_n_i) begin
                 valid_o <= 1'b0;
+                error_o <= 1'b0;
             end else if (!stall_i) begin
                 valid_o <= valid_i;
+                error_o <= valid_i & error_i;
             end
         end
 

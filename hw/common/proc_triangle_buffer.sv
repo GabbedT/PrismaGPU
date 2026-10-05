@@ -6,8 +6,10 @@ module proc_triangle_buffer (
     input logic rst_n_i,
     input logic stall_i,
 
+    /* Input triangles are complete triplets, including vertices with errors. */
     input logic accept_i,
     input logic valid_i,
+    input logic error_i,
     input proc_vertex_t vertex_i,
 
     output logic full_o,
@@ -23,22 +25,27 @@ module proc_triangle_buffer (
 
 
     logic [2:0] fill_valid;
+    logic discard;
 
         always_ff @(posedge clk_i) begin
             if (!rst_n_i) begin
                 fill_valid <= '0;
+                discard <= 1'b0;
             end else if (!stall_i) begin
-                if ((fill_valid == '1) & accept_i) begin
+                /* Failed triangles retire internally, without waiting for accept_i. */
+                if ((fill_valid == '1) & (accept_i | discard)) begin
                     fill_valid <= valid_i ? 3'b100 : 3'b000;
+                    discard <= valid_i & error_i;
                 end else if (valid_i & !full_o) begin
                     fill_valid <= {1'b1, fill_valid[2:1]};
+                    discard <= discard | error_i;
                 end
             end
         end
 
-    assign valid_o = fill_valid == '1;
+    assign valid_o = (fill_valid == '1) & !discard;
 
-    assign full_o = (fill_valid == '1) & !accept_i;
+    assign full_o = valid_o & !accept_i;
 
 endmodule : proc_triangle_buffer
 

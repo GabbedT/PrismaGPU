@@ -43,10 +43,20 @@ module perspective_divider (
 //====================================================================================
 
     vertex_t vertex_CRT;
+    logic reciprocal_error;
 
         always_ff @(posedge clk_i) begin
             if (!stall_i) begin
                 vertex_CRT <= vertex_i;
+            end
+        end
+
+    /* Preserve every vertex token, including failed perspective divisions. */
+        always_ff @(posedge clk_i) begin
+            if (!rst_n_i) begin
+                error_o <= 1'b0;
+            end else if (!stall_i) begin
+                error_o <= valid_i & reciprocal_error;
             end
         end
 
@@ -58,17 +68,17 @@ module perspective_divider (
     logic [24:0] reciprocal; logic signed [5:0] exponent;
 
     reciprocal_divider divider (
-        .clk_i        ( clk_i   ),
-        .rst_n_i      ( rst_n_i ),
-        .stall_i      ( stall_i ),
+        .clk_i        ( clk_i            ),
+        .rst_n_i      ( rst_n_i          ),
+        .stall_i      ( stall_i          ),
 
-        .divisor_i    ( vertex_i.pos.w ),
-        .valid_i      ( valid_i        ),
+        .divisor_i    ( vertex_i.pos.w   ),
+        .valid_i      ( valid_i          ),
 
-        .error_o      ( error_o    ),
-        .valid_o      ( valid_o    ),
-        .reciprocal_o ( reciprocal ),
-        .exponent_o   ( exponent   )
+        .error_o      ( reciprocal_error ),
+        .valid_o      ( valid_o          ),
+        .reciprocal_o ( reciprocal       ),
+        .exponent_o   ( exponent         )
     );
 
 
