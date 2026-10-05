@@ -1,8 +1,6 @@
 `ifndef CLIP_VERTEX_FIFO_SV
     `define CLIP_VERTEX_FIFO_SV
 
-import triangle_pkg::*;
-
 module clip_vertex_fifo (
     input logic clk_i,
     input logic rst_n_i,
