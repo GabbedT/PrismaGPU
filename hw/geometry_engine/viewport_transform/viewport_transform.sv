@@ -32,6 +32,7 @@ module viewport_transform (
     assign y_scaled = y_offset * $signed({1'b0, height_screen_i});
 
 
+    inv_w_t inv_w_ff;
     logic signed [65:0] x_scaled_ff, y_scaled_ff;
     logic [$bits(vertex_i.pos.z) - 1:0] z_ff;
     logic [$bits(vertex_i.tex.u) - 1:0] u_ff, v_ff;
@@ -42,6 +43,7 @@ module viewport_transform (
                 x_scaled_ff <= x_scaled;
                 y_scaled_ff <= y_scaled;
                 z_ff <= vertex_i.pos.z;
+                inv_w_ff <= inv_w_t'(vertex_i.pos.w);
 
                 u_ff <= vertex_i.tex.u;
                 v_ff <= vertex_i.tex.v;
@@ -69,6 +71,7 @@ module viewport_transform (
     assign vertex_o.pos.y = (y_scaled_ff + 66'sd256) >>> 9;
 
     assign vertex_o.pos.z = z_ff;
+    assign vertex_o.pos.w = inv_w_ff;
 
     assign vertex_o.tex.u = u_ff;
     assign vertex_o.tex.v = v_ff;

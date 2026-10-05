@@ -2,6 +2,12 @@
     `define TRIANGLE_PKG
 
 package triangle_pkg;
+
+    /* Positive 1/w = (Q1.24 mantissa) * 2^exponent; 31 packed bits. */
+    typedef struct packed {
+        logic [24:0] mantissa;
+        logic signed [5:0] exponent;
+    } inv_w_t;
     
     /* Q16.16 Coordinates */
     typedef struct packed {
@@ -11,12 +17,12 @@ package triangle_pkg;
         logic [31:0] w;
     } position_t;
 
-    /* Q16.8 Coordinates */
+    /* Q16.8 coordinates and normalized reciprocal W. */
     typedef struct packed {
         logic [23:0] x;
         logic [23:0] y;
         logic [23:0] z;
-        logic [23:0] w;
+        inv_w_t      w;
     } screen_pos_t;
 
     typedef struct packed {

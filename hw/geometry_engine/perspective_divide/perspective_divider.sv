@@ -66,6 +66,10 @@ module perspective_divider (
 //====================================================================================
 
     logic [24:0] reciprocal; logic signed [5:0] exponent;
+    inv_w_t inv_w;
+
+    assign inv_w.mantissa = reciprocal;
+    assign inv_w.exponent = -exponent;
 
     reciprocal_divider divider (
         .clk_i        ( clk_i            ),
@@ -89,7 +93,8 @@ module perspective_divider (
         always_comb begin
             vertex_o = vertex_CRT;
 
-            vertex_o.pos.w = reciprocal;
+            /* Pack inv_w_t in bits [30:0]; bit 31 is padding. */
+            vertex_o.pos.w = {1'b0, inv_w};
             vertex_o.pos.x = perspective_product(vertex_CRT.pos.x, reciprocal, exponent);
             vertex_o.pos.y = perspective_product(vertex_CRT.pos.y, reciprocal, exponent);
             vertex_o.pos.z = perspective_product(vertex_CRT.pos.z, reciprocal, exponent);

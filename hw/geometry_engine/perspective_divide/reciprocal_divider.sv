@@ -12,7 +12,7 @@ module reciprocal_divider (
     output logic error_o,
     output logic valid_o,
 
-    /* Q1.24 reciprocal. */
+    /* Q1.24 mantissa */
     output logic [24:0] reciprocal_o,
     output logic signed [5:0] exponent_o
 );
@@ -116,7 +116,8 @@ module reciprocal_divider (
             if (!rst_n_i) begin
                 valid_o <= 1'b0;
             end else if (!stall_i) begin
-                valid_o <= valid_i & !error_o;
+                /* Preserve the transaction even when the divisor is invalid. */
+                valid_o <= valid_i;
             end
         end
 
