@@ -55,4 +55,6 @@ package triangle_pkg;
 
 endpackage : triangle_pkg
 
+import triangle_pkg::*;
+
 `endif

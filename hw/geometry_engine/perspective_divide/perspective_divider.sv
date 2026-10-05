@@ -1,8 +1,6 @@
 `ifndef PERSPECTIVE_DIVIDER_SV
     `define PERSPECTIVE_DIVIDER_SV
 
-import triangle_pkg::*;
-
 module perspective_divider (
     input logic clk_i,
     input logic rst_n_i,

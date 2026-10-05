@@ -1,8 +1,6 @@
 `ifndef MATRIX_ENGINE_SV
     `define MATRIX_ENGINE_SV
 
-import triangle_pkg::*;
-
 module matrix_engine (
     /* Vertex to process */
     input vertex_t vertex_i,

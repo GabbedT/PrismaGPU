@@ -1,7 +1,6 @@
 `ifndef VERTEX_INTERPOLATOR_SV
     `define VERTEX_INTERPOLATOR_SV
 
-import triangle_pkg::*;
 module vertex_interpolator (
     input logic clk_i,
     input logic rst_n_i,
