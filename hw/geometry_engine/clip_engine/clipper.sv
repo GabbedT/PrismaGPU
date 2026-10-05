@@ -1,7 +1,6 @@
 `ifndef CLIPPER_SV
     `define CLIPPER_SV
 
-import triangle_pkg::*;
 module clipper (
     input logic clk_i,
     input logic rst_n_i,

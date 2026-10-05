@@ -1,8 +1,6 @@
 `ifndef CLIP_ENGINE_SV
     `define CLIP_ENGINE_SV
 
-import triangle_pkg::*;
-
 module clip_engine (
     input logic clk_i,
     input logic rst_n_i,
@@ -14,7 +12,7 @@ module clip_engine (
     output logic stall_o,
 
     /* Output transfer: valid_o && !stall_i */
-    output vertex_t vertex_overtex_o,
+    output vertex_t vertex_o,
     output logic valid_o,
 
     /* One completion per input, including discarded triangles */
@@ -33,10 +31,10 @@ module clip_engine (
     logic error_CRT;
 
     /* Keep FIFO ownership until the entire polygon has been consumed. */
-    assign stall_o = !rst_n_i | (state_CRT != IDLE) | stall_i;
+    assign stall_o = (state_CRT != IDLE) | stall_i;
     assign input_accept = valid_i & !stall_o;
 
-    always_ff @(posedge clk_i or negedge rst_n_i) begin
+    always_ff @(posedge clk_i) begin
         if (!rst_n_i) begin
             state_CRT <= IDLE;
             error_CRT <= 1'b0;
@@ -51,6 +49,9 @@ module clip_engine (
         end
     end
 
+
+    logic sequencer_done;
+
     always_comb begin
         state_NXT = state_CRT;
         done_o = 1'b0;
@@ -61,7 +62,7 @@ module clip_engine (
                     if (triangle_clip) begin
                         state_NXT = CLIPPING;
                     end else begin
-                        done_o = 1'b1;
+                        done_o = triangle_outside | sequencer_done;
                     end
                 end
             end
@@ -72,14 +73,14 @@ module clip_engine (
                 end else if (clipper_idle) begin
                     /* Cleanup also completes empty or degenerate polygons. */
                     state_NXT = IDLE;
-                    done_o = rst_n_i;
+                    done_o = 1'b1;
                 end
             end
 
             ASSEMBLING: begin
                 if (assembler_done) begin
                     state_NXT = IDLE;
-                    done_o = rst_n_i;
+                    done_o = 1'b1;
                 end
             end
 
@@ -220,7 +221,7 @@ module clip_engine (
 //      OUTPUT MUX
 //====================================================================================
 
-    typedef enum logic [1:0] {VTX0, VTX1, VXT2} select_state_t;
+    typedef enum logic [1:0] {VTX0, VTX1, VTX2} select_state_t;
 
     select_state_t select_state_CRT, select_state_NXT;
 
@@ -244,32 +245,35 @@ module clip_engine (
             case (select_state_CRT)
                 VTX0: begin
                     if (direct_valid) begin
-                        state_NXT = VTX1;
+                        select_state_NXT = VTX1;
 
                         vtx_valid = 1'b1;
                     end
                 end
 
                 VTX1: begin
-                    state_NXT = VTX2;
+                    select_state_NXT = VTX2;
 
                     vtx_valid = 1'b1;
                 end
 
                 VTX2: begin
-                    state_NXT = VTX0;
+                    select_state_NXT = VTX0;
 
                     vtx_valid = 1'b1;
                 end
             endcase
         end
 
+    assign sequencer_done = select_state_CRT == VTX2;
+
+
         always_comb begin
             /* Fan order is (v0, v1, v2), (v0, v2, v3), ... */
             if (state_CRT == ASSEMBLING) begin
                 vertex_o = assembled_vertex;
             end else begin
-                vertex_o = triangle_i[select_state_CRT];
+                vertex_o = triangle_i.vtx[select_state_CRT];
             end
         end
 
