@@ -12,14 +12,20 @@ module matrix_engine (
     output vertex_t vertex_o
 );
 
-    logic [3:0][31:0] processed_element;
+    logic [3:0][31:0] vertex_position, processed_element;
+
+    /* Explicit indices preserve the packed vertex layout. */
+    assign vertex_position[0] = vertex_i.pos.x;
+    assign vertex_position[1] = vertex_i.pos.y;
+    assign vertex_position[2] = vertex_i.pos.z;
+    assign vertex_position[3] = vertex_i.pos.w;
 
     genvar i;
 
     generate
         for (i = 0; i < 4; ++i) begin
             line_multiplier matrix_line (
-                .vector_i      ( vertex_i.pos         ),
+                .vector_i      ( vertex_position      ),
                 .coefficient_i ( coefficient_i[i]     ),
                 .element_o     ( processed_element[i] )
             );
