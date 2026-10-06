@@ -23,4 +23,9 @@ viewport_transform/viewport_transform.sv
 
 culling/cull_engine.sv
 
-triangle_pipeline.sv
+memory/triangle_unpacker.sv
+memory/triangle_packer.sv
+
+geometry_engine_pipeline.sv
+geometry_engine_registers.sv
+geometry_engine.sv
