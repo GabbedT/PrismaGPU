@@ -74,9 +74,9 @@ module cull_engine (
 
     logic zero_area, ccw, cw;
 
-    assign zero_area = triangle_area == '0;
-    assign ccw = triangle_area < '0;
-    assign cw = triangle_area > '0;
+    assign zero_area = triangle_area == 51'sd0;
+    assign ccw = triangle_area < 51'sd0;
+    assign cw = triangle_area > 51'sd0;
 
 
     /* Selection */
@@ -100,6 +100,8 @@ module cull_engine (
                     {CW, NONE}: valid_o = 1'b1;
 
                     {CCW, NONE}: valid_o = 1'b1;
+
+                    default: valid_o = 1'b0;
                 endcase
             end
         end
