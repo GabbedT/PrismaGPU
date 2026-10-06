@@ -29,8 +29,10 @@ module geometry_engine_pipeline (
     output proc_triangle_t triangle_o,
     output logic valid_o,
     output triangle_error_t error_o,
+    output logic busy_o,
 
     /* Cumulative triangle counters; clear on reset and wrap at 2^32. */
+    input logic enable_pcounters_i,
     output logic [31:0] input_triangle_count_o,
     output logic [31:0] output_triangle_count_o,
     output logic [31:0] discarded_triangle_count_o,
@@ -243,13 +245,26 @@ module geometry_engine_pipeline (
 
     logic output_triangle_accept;
     logic pipeline_busy;
+    logic [1:0] input_vertex_count;
     logic [1:0] discarded_triangle_increment;
 
     assign output_triangle_accept = valid_o & !stall_i;
     assign discarded_triangle_increment = {1'b0, clip_discard} + {1'b0, (cull_discard & !stall_i)};
 
-    assign pipeline_busy = (valid_i & !forward_back_i) | triangle_valid | clip_valid | clip_valid_ff |
-                           perspective_valid | perspective_valid_ff | viewport_valid | processed_valid | valid_o;
+    /* Include partial input triangles and the final cull/discard stage. */
+    assign pipeline_busy = (input_vertex_count != '0) | (valid_i & !forward_back_i) |
+                           triangle_valid | clip_valid | clip_valid_ff | perspective_valid |
+                           perspective_valid_ff | viewport_valid | processed_valid | valid_o | cull_discard;
+
+    assign busy_o = pipeline_busy;
+
+    always_ff @(posedge clk_i) begin
+        if (!rst_n_i) begin
+            input_vertex_count <= '0;
+        end else if (valid_i & !stall_o & !forward_back_i) begin
+            input_vertex_count <= (input_vertex_count == 2'd2) ? 2'd0 : input_vertex_count + 1'b1;
+        end
+    end
 
     always_ff @(posedge clk_i) begin
         if (!rst_n_i) begin
@@ -257,7 +272,7 @@ module geometry_engine_pipeline (
             output_triangle_count_o <= '0;
             discarded_triangle_count_o <= '0;
             stall_cycle_count_o <= '0;
-        end else begin
+        end else if (enable_pcounters_i) begin
             if (clip_done) begin
                 input_triangle_count_o <= input_triangle_count_o + 1'b1;
             end
