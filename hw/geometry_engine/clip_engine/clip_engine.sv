@@ -6,12 +6,12 @@ module clip_engine (
     input logic rst_n_i,
     input logic stall_i,
 
-    /* Input transfer: valid_i && !stall_o. Hold data while stalled. */
+    /* Input transfer: hold triangle_i and valid_i until done_o
+     * including while stalled */
     input triangle_t triangle_i,
     input logic valid_i,
-    output logic stall_o,
 
-    /* Output transfer: valid_o && !stall_i */
+    /* Output transfer */
     output vertex_t vertex_o,
     output logic valid_o,
 
@@ -31,8 +31,7 @@ module clip_engine (
     logic error_CRT;
 
     /* Keep FIFO ownership until the entire polygon has been consumed. */
-    assign stall_o = (state_CRT != IDLE) | stall_i;
-    assign input_accept = valid_i & !stall_o;
+    assign input_accept = valid_i & (state_CRT == IDLE) & !stall_i;
 
     always_ff @(posedge clk_i) begin
         if (!rst_n_i) begin
