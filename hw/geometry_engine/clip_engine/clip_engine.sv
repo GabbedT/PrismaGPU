@@ -17,6 +17,8 @@ module clip_engine (
 
     /* One completion per input, including discarded triangles */
     output logic done_o,
+    /* One-cycle pulse when an accepted triangle is trivially outside. */
+    output logic discard_o,
     output logic error_o
 );
 
@@ -132,6 +134,7 @@ module clip_engine (
     assign triangle_clip    = !triangle_inside & !triangle_outside;
 
     assign direct_valid = (state_CRT == IDLE) & valid_i & triangle_inside;
+    assign discard_o = input_accept & triangle_outside;
 
 
 //====================================================================================

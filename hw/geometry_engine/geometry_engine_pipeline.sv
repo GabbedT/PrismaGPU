@@ -28,7 +28,13 @@ module geometry_engine_pipeline (
     /* Output transfer: valid_o && !stall_i */
     output proc_triangle_t triangle_o,
     output logic valid_o,
-    output triangle_error_t error_o
+    output triangle_error_t error_o,
+
+    /* Cumulative triangle counters; clear on reset and wrap at 2^32. */
+    output logic [31:0] input_triangle_count_o,
+    output logic [31:0] output_triangle_count_o,
+    output logic [31:0] discarded_triangle_count_o,
+    output logic [31:0] stall_cycle_count_o
 );
 
 //====================================================================================
@@ -65,7 +71,7 @@ module geometry_engine_pipeline (
 
 
     triangle_t buffered_triangle;
-    logic triangle_valid, clip_done;
+    logic triangle_valid, clip_done, clip_discard;
 
     /* Keep the triangle stable until clipping and assembly complete. */
     triangle_buffer input_buffer (
@@ -94,10 +100,10 @@ module geometry_engine_pipeline (
         .stall_i    ( clip_stall        ),
         .triangle_i ( buffered_triangle ),
         .valid_i    ( triangle_valid    ),
-        .stall_o    (                   ),
         .vertex_o   ( clip_vertex       ),
         .valid_o    ( clip_valid        ),
         .done_o     ( clip_done         ),
+        .discard_o  ( clip_discard      ),
         .error_o    ( clip_error        )
     );
 
@@ -202,6 +208,8 @@ module geometry_engine_pipeline (
 //      CULL ENGINE
 //====================================================================================
 
+    logic cull_discard;
+
     cull_engine triangle_culler (
         .clk_i        ( clk_i              ),
         .rst_n_i      ( rst_n_i            ),
@@ -211,7 +219,8 @@ module geometry_engine_pipeline (
         .front_face_i ( front_face_i       ),
         .cull_mode_i  ( cull_mode_i        ),
         .triangle_o   ( triangle_o         ),
-        .valid_o      ( valid_o            )
+        .valid_o      ( valid_o            ),
+        .discard_o    ( cull_discard       )
     );
 
         always_comb begin
@@ -226,6 +235,44 @@ module geometry_engine_pipeline (
                 end
             end
         end
+
+
+//====================================================================================
+//      SOFTWARE COUNTERS
+//====================================================================================
+
+    logic output_triangle_accept;
+    logic pipeline_busy;
+    logic [1:0] discarded_triangle_increment;
+
+    assign output_triangle_accept = valid_o & !stall_i;
+    assign discarded_triangle_increment = {1'b0, clip_discard} + {1'b0, (cull_discard & !stall_i)};
+
+    assign pipeline_busy = (valid_i & !forward_back_i) | triangle_valid | clip_valid | clip_valid_ff |
+                           perspective_valid | perspective_valid_ff | viewport_valid | processed_valid | valid_o;
+
+    always_ff @(posedge clk_i) begin
+        if (!rst_n_i) begin
+            input_triangle_count_o <= '0;
+            output_triangle_count_o <= '0;
+            discarded_triangle_count_o <= '0;
+            stall_cycle_count_o <= '0;
+        end else begin
+            if (clip_done) begin
+                input_triangle_count_o <= input_triangle_count_o + 1'b1;
+            end
+
+            if (output_triangle_accept) begin
+                output_triangle_count_o <= output_triangle_count_o + 1'b1;
+            end
+
+            discarded_triangle_count_o <= discarded_triangle_count_o + discarded_triangle_increment;
+
+            if (pipeline_busy & stall_o) begin
+                stall_cycle_count_o <= stall_cycle_count_o + 1'b1;
+            end
+        end
+    end
 
 endmodule : geometry_engine_pipeline
 

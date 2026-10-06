@@ -16,7 +16,8 @@ module cull_engine (
 
     /* Output */
     output proc_triangle_t triangle_o,
-    output logic valid_o
+    output logic valid_o,
+    output logic discard_o
 );
 
 //====================================================================================
@@ -106,6 +107,9 @@ module cull_engine (
             end
         end
     end
+
+    /* A valid input triangle that produces no output was culled or degenerate. */
+    assign discard_o = valid_ff & !valid_o;
 
 endmodule : cull_engine
 
