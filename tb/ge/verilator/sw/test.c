@@ -43,6 +43,46 @@ static int mismatch(const char *field, unsigned result, unsigned v, double expec
     return 1;
 }
 
+/* Machine-readable counters use test_log so the same report works under Spike. */
+static void coverage_counts(const char *group, const unsigned *counts, unsigned size) {
+    /* Existing runners can ignore added cross bins during an ongoing run. */
+    const char *prefix = strcmp(group, "culling_winding") == 0 ?
+                         "[triangle_coverage_cross]" : "[triangle_coverage]";
+    log_message(0, "%s {\"group\":\"%s\",\"counts\":[", prefix, group);
+    for (unsigned i = 0; i < size; ++i) {
+        log_message(0, "%s%u", i ? "," : "", counts[i]);
+    }
+    log_message(0, "]}\n");
+}
+
+typedef struct {
+    unsigned verified;
+    unsigned planes[6][27];
+    unsigned outputs[GE_MAX_OUTPUT + 1];
+    unsigned culling[6];
+    unsigned culling_winding[18];
+    unsigned winding[3];
+    unsigned matrix[2];
+    unsigned viewport[2];
+} triangle_coverage;
+
+static void coverage_snapshot(const triangle_coverage *coverage) {
+    static const char *const planes[] = {
+        "plane_left", "plane_right", "plane_top", "plane_bottom", "plane_far", "plane_near"
+    };
+    coverage_counts("verified_triangles", &coverage->verified, 1);
+    for (unsigned p = 0; p < 6; ++p) {
+        coverage_counts(planes[p], coverage->planes[p], 27);
+    }
+    coverage_counts("output_triangles", coverage->outputs, GE_MAX_OUTPUT + 1);
+    coverage_counts("culling", coverage->culling, 6);
+    coverage_counts("culling_winding", coverage->culling_winding, 18);
+    coverage_counts("input_winding", coverage->winding, 3);
+    coverage_counts("matrix", coverage->matrix, 2);
+    coverage_counts("viewport_parity", coverage->viewport, 2);
+    test_phase("coverage_checkpoint", case_index);
+}
+
 int run_test(const test_config *cfg) {
     config = cfg;
     uint32_t seed = cfg->seed;
@@ -56,6 +96,7 @@ int run_test(const test_config *cfg) {
     unsigned plane_coverage[6] = {0};
     unsigned output_coverage = 0;
     unsigned cull_coverage = 0;
+    triangle_coverage coverage = {0};
 
     const double tolerances[] = {
         cfg->xy_tol, cfg->xy_tol,                 /* Screen X, Y */
@@ -70,6 +111,7 @@ int run_test(const test_config *cfg) {
                 test_names[cfg->test], cfg->seed, cfg->timing_seed, cfg->cases);
     log_message(2, "[SW] tolerances xy=%g z=%g uv=%g color=%g inv_w=%g timeout=%u\n", cfg->xy_tol,
                 cfg->z_tol, cfg->uv_tol, cfg->color_tol, cfg->w_tol, cfg->timeout);
+    coverage_snapshot(&coverage);
 
     for (case_index = 0; case_index < count; ++case_index) {
         triangle input;
@@ -95,6 +137,9 @@ int run_test(const test_config *cfg) {
         unsigned fixed_count = golden_model(&decoded, &geometry, decisions, 1, plane_states);
         unsigned floating_count = golden_model(&decoded, &geometry, expected, 0, NULL);
         unsigned outputs = fixed_count * batch;
+        if (cfg->test == TEST_OUTPUT_COUNTS) {
+            failures += mismatch("stimulus_output_count", 0, 0, case_index, fixed_count, 0);
+        }
 
         for (unsigned p = 0; p < 6; ++p) {
             plane_coverage[p] |= 1u << plane_states[p];
@@ -106,6 +151,7 @@ int run_test(const test_config *cfg) {
         /* Boundary cases use explicit Q16.16 clipping and Q16.8 area decisions.
          * Coordinate tolerances never change the expected triangle count. */
         int boundary = (cfg->test >= TEST_ON_PLANE && cfg->test <= TEST_NEAR_ZERO) ||
+                       cfg->test == TEST_PLANE_STATES || cfg->test == TEST_OUTPUT_COUNTS ||
                        floating_count != fixed_count;
         if (boundary) {
             memcpy(expected, decisions, fixed_count * sizeof(triangle));
@@ -252,6 +298,32 @@ int run_test(const test_config *cfg) {
             }
             break;
         }
+
+        /* Credit bins only after all RTL results and integrity checks pass.
+         * Batch duplicates count as separate input triangles; aborted reset
+         * attempts never contribute to verified triangle counts. */
+        coverage.verified += batch;
+        for (unsigned p = 0; p < 6; ++p) {
+            coverage.planes[p][plane_states[p]] += batch;
+        }
+        coverage.outputs[fixed_count] += batch;
+        coverage.culling[geometry.front * 3 + geometry.cull] += batch;
+        double area = (decoded.v[1].f[0] - decoded.v[0].f[0]) *
+                          (decoded.v[2].f[1] - decoded.v[0].f[1]) -
+                      (decoded.v[1].f[1] - decoded.v[0].f[1]) *
+                          (decoded.v[2].f[0] - decoded.v[0].f[0]);
+        unsigned winding = area < 0 ? 0 : area > 0 ? 1 : 2;
+        coverage.winding[winding] += batch;
+        coverage.culling_winding[winding * 6 + geometry.front * 3 + geometry.cull] += batch;
+        unsigned transformed = 0;
+        for (unsigned i = 0; i < 16; ++i) {
+            transformed |= geometry.matrix[i] != (i % 5 == 0 ? 1.0 : 0.0);
+        }
+        coverage.matrix[transformed] += batch;
+        coverage.viewport[(geometry.width & 1) || (geometry.height & 1)] += batch;
+        if ((case_index + 1) % 1000 == 0) {
+            coverage_snapshot(&coverage);
+        }
     }
 
     log_message(0, "[SW] %s test=%s cases_completed=%u failures=%u seed=%u timing_seed=%u\n",
@@ -264,5 +336,6 @@ int run_test(const test_config *cfg) {
     }
 
     log_message(0, "\n");
+    coverage_snapshot(&coverage);
     return failures ? 1 : 0;
 }

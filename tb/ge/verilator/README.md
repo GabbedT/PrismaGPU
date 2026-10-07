@@ -8,7 +8,7 @@ Requirements for standalone mode:
 
 - Verilator with FST tracing support
 - GNU Make
-- Python 3
+- Python 3.9 or later
 - A C11 compiler and a C++17 compiler
 
 Run commands from this directory, or use `make -C tb/ge/verilator ...` from the repository root:
@@ -19,14 +19,27 @@ make test TEST=clip_left
 make test TEST=random SEED=42 TIMING_SEED=17 CASES=1000
 make test TEST=clip_left VERBOSE=2 WAVE=1
 make regression CASES=10000 VERBOSE=0 WALL_TIMEOUT=3600
+make coverage CASES=1000 VERBOSE=0
 ```
 
-`make test` builds the selected mode once, runs one test category, and saves its logs and output under `out/`. `make regression` runs all 27 categories with two timing seeds: `TIMING_SEED` and the next 32-bit value, wrapping at `2^32`. It keeps the same geometry `SEED` for both runs and compares their output bits, ignoring only the unused output padding. Regression continues after a failing category and returns a nonzero exit code if a build, simulation, comparison, or timeout fails.
+`make test` builds the selected mode once, runs one test category, and saves its logs
+and reports under `out/`. `make regression` runs all 29 categories with two timing
+seeds: `TIMING_SEED` and the next 32-bit value, wrapping at `2^32`. It keeps the same
+geometry `SEED` for both runs and compares their output fingerprints after ignoring
+unused padding. It continues after failures and returns nonzero on any failure.
+
+`make coverage` runs the directed categories with both timing seeds, then distributes
+the total `CASES` random budget across `SEEDS` geometry streams (default 16). Geometry
+seeds start at `SEED` and increment modulo `2^32`. Each stream is replayed with both
+timing seeds to check timing invariance. The total random workload is `2 * CASES`,
+not `2 * SEEDS * CASES`; directed cases add a fixed workload. More seeds alone do
+not establish complete coverage: the reports expose hit and missing bins.
 
 Other targets:
 
 - `make build` compiles the selected simulator (and the Spike firmware in Spike mode) without running tests.
 - `make waveform TEST=...` is shorthand for `make test TEST=... WAVE=1`.
+- `make coverage` runs directed coverage goals and a campaign over multiple geometry seeds with RTL instrumentation.
 - `make spike TEST=...` is shorthand for `make test MODE=spike TEST=...`.
 - `make clean` removes `build/` and `out/`, including saved logs and waveforms.
 
@@ -89,6 +102,7 @@ Only device operations, reset, and timed-agent activity advance the RTL clock. T
 | File | Purpose |
 |---|---|
 | [Makefile](Makefile), [run.py](run.py) | Build settings, test selection, regression runs, timeouts, logs, and reproduction commands. |
+| [coverage_report.py](coverage_report.py) | Functional-bin aggregation and RTL coverage summaries. |
 | [sw/test.c](sw/test.c) | Shared C test flow: generate and transfer inputs, configure MMIO, start the GE, wait for completion, and check results. |
 | [sw/triangle_gen.c](sw/triangle_gen.c) | Test registry, directed cases, and reproducible random-case generation. |
 | [sw/golden_model.c](sw/golden_model.c) | Input/output codecs and independent floating-point and quantized reference models. |
@@ -106,11 +120,12 @@ Pass settings as Make variables, for example `make test TEST=random SEED=5 CASES
 | `MODE` | `standalone` | Execution mode: `standalone` or `spike`. |
 | `TEST` | `identity` | Test category. Run `make list` to see the registry. |
 | `SEED` | `1` | 32-bit geometry/generator seed. Zero is valid. |
+| `SEEDS` | `16` | Number of geometry streams for `make coverage`, capped at `CASES`. Ignored by `test` and `regression`. |
 | `TIMING_SEED` | `2` | Independent 32-bit seed for memory-agent delays and pauses. Zero is valid. |
-| `CASES` | `100` | Number of generated triangles for `random`; directed categories use fixed case counts. |
+| `CASES` | `100` | Random triangles per stream for `test`/`regression`; total random budget across all geometry seeds for `coverage`. Directed categories use fixed case counts. |
 | `VERBOSE` | `1` | `0` prints results, `1` prints test phases, `2` also prints configuration, data, MMIO, and word transfers. |
 | `TIMEOUT` | `200000` | Maximum simulated cycles for processing and reset waits. |
-| `WALL_TIMEOUT` | `300` | Maximum wall-clock seconds allowed for each simulator process. |
+| `WALL_TIMEOUT` | `auto` | Maximum wall-clock seconds per simulator process. `auto` uses `max(300, ceil(CASES/20))`, e.g. 5,000 seconds for 100,000 cases. An explicit integer overrides it. |
 | `LATENCY` | `3` | Maximum added agent delay in cycles; each delay is chosen from 0 through this value. |
 | `PAUSE` | `25` | Percentage chance per active cycle that the agent skips a transfer opportunity. Range: 0–100. |
 | `OUTPUT_HOLD` | `0` | Earliest cycle after start at which the agent may read output. `backpressure` enforces at least 1,000 cycles. |
@@ -120,15 +135,21 @@ Pass settings as Make variables, for example `make test TEST=random SEED=5 CASES
 | `W_TOL` | `0.001` | Absolute tolerance for reciprocal W. |
 | `COLOR_TOL` | `3` | Absolute tolerance for 4-bit RGBA channel values (range 0–15). |
 | `WAVE` | `0` | Set to `1` to write an FST waveform for each run. |
-| `OUT` | `out` | Parent directory for per-invocation logs, result files, binary output, and optional waveforms. |
+| `COVERAGE` | `0` | Set to `1` to instrument RTL line/branch paths and signal toggles and generate merged reports. |
+| `OUT` | `out` | Parent directory for per-invocation logs, reports, and optional waveforms. |
 | `JOBS` | `2` | Parallel jobs used by Verilator during compilation. |
 | `VERILATOR` | `verilator` | Verilator executable name or path. |
+| `VERILATOR_COVERAGE` | `verilator_coverage` | Coverage analyzer from the same Verilator installation. |
 | `RISCV_CC` | `riscv64-unknown-elf-gcc` | Bare-metal RISC-V compiler used in Spike mode. |
 | `SPIKE_DIR` | `/usr/local` | Spike installation prefix, or source tree when using a local build. |
 | `SPIKE_INCLUDE` | `$(SPIKE_DIR)/include` | Include directory for Spike and `libfesvr` headers. |
 | `SPIKE_LIB` | `$(SPIKE_DIR)/lib` | Directory containing `libriscv` and `libfesvr`. |
 
-The timing seed changes agent scheduling, not the generated geometry. In regression, each category runs with two timing seeds and the saved binary outputs must match exactly after canonicalizing unused output padding. This checks that external memory timing does not change the result.
+The timing seed changes agent scheduling, not the generated geometry. In regression,
+each category runs with two timing seeds. The byte count and SHA-256 digest of the
+canonicalized output must match. Each binary capture is deleted immediately after
+processing that simulation; fingerprints are saved in `results.json`. This checks
+that external memory timing does not change the result.
 
 ### Spike setup
 
@@ -160,7 +181,9 @@ The testbench bridge maps firmware RAM to `0x10000000`, GE registers to `0x40000
 | `on_plane`, `near_plane` | A vertex exactly on a plane, then offsets from −2 to +2 Q16.16 LSBs around all six planes. |
 | `coincident`, `near_zero` | Two coincident vertices, then vertices separated by one LSB to create a near-zero area. |
 | `matrix` | Scaling, translation, and a transformed W value of 2. |
-| `culling` | Six combinations of three culling modes and two front-face conventions. |
+| `culling` | All 18 combinations of three culling modes, two front-face conventions, and CW/CCW/zero-area input winding. |
+| `plane_states` | All 27 inside/outside/on-plane classifications of three vertices for each of the six planes (162 directed inputs). |
+| `output_counts` | Eight directed multi-plane cases producing exactly 0 through 7 output triangles, including maximum triangle expansion. |
 | `random` | Random XYZ/UV, varying viewport, and randomized matrix, W, and culling settings. |
 | `winding` | Reversed-order pair; compares against the golden model and checks geometric equivalence after vertex reordering. |
 | `attributes` | Pair with UV and colors halved; compares against the golden model and checks geometry remains unchanged. |
@@ -187,8 +210,95 @@ Each processing run checks counts, IRQ, buffer bounds, sentinels, and input inte
 
 ## Logs and debugging
 
-Each invocation creates a unique directory beneath `OUT`, containing `build.log`, per-test logs, `.bin` output captures, `results.json`, and optional `.fst` waveforms. The summary reports pass/fail counts and full commands for replaying failures.
+Each invocation creates a unique directory beneath `OUT`, containing `build.log`,
+per-test logs, `results.json`, coverage reports, and optional `.fst` waveforms.
+Per-test `.bin` and `.dat` files are temporary and are removed after each simulation,
+including failed simulations. The final summary always reports functional and RTL
+coverage totals, pass/fail counts, and commands for replaying failures. Build failures
+also print a summary, with unavailable RTL coverage indicated explicitly.
+
+Simulator output is streamed to the terminal and its per-test log while it runs.
+The runner prints a `PROGRESS` update at each new verified checkpoint and at least
+every 10 seconds while waiting, even with `VERBOSE=0`. For `random`, it shows the
+latest verified count out of `CASES`, percentage, elapsed time, and estimated time
+remaining once a nonzero checkpoint is available. Checkpoints arrive every 1,000
+cases; the estimate is approximate. Each geometry stream runs `random` twice, once
+per timing seed. A quiet interval between checkpoints does not indicate a deadlock.
 
 Numeric failures report the phase, geometry seed, timing seed, triangle, vertex, field, expected value, actual value, and tolerance. Replay the printed command with `VERBOSE=2 WAVE=1` to capture detailed transfers and an FST trace. Open the waveform with an FST-compatible viewer such as GTKWave. STATUS polling remains quiet in debug mode.
 
-Coverage output includes output counts, culling, plane classifications, and stall cycles. For each plane, bit `a + 3*b + 9*c` encodes the states of the three vertices: inside=0, outside=1, on-plane=2. These counters describe observed cases and do not claim exhaustive coverage.
+## Coverage
+
+Every test/regression writes `coverage.md` and `coverage.json` in its invocation
+directory. Triangle coverage counts **verified input triangles**: a bin is credited
+after the RTL output, counters, IRQ, guards, and input integrity checks pass.
+Interrupted reset attempts are excluded. Batch duplicates and the two regression
+timing seeds count separately; the report states these totals explicitly.
+
+The functional report includes:
+
+- Passing categories out of the 29 registered tests (execution status, separate from coverage completeness).
+- For each of the six clipping planes, all 27 combinations of inside/outside/on-plane
+  for the three transformed, quantized vertices before clipping. Index
+  `a + 3*b + 9*c` uses inside=0, outside=1, on-plane=2.
+- Output triangle counts from 0 through 7, and all six front-face/culling settings.
+- All 18 combinations of input winding and front-face/culling settings.
+- Decoded input XY winding (CW, CCW, zero area), identity/transformed matrix, and
+  even/odd viewport dimensions.
+- Observed input/output stall cycles.
+
+`coverage.json` gives the hit count and missing bins for each group; `coverage.md`
+shows hit/total percentages. Unhit bins are reported without failing the test:
+these goals do not imply that the current stimulus can reach every combination.
+`complete` describes successful execution; `functional_goals_met` separately states
+whether every defined triangle bin was hit. Neither implies 100% RTL coverage.
+Reports also list geometry seeds and distinct verified random cases by `(seed,
+case index)`, counting timing replays once. Cumulative triangle counts include
+timing replays.
+The legacy `[coverage]` masks still describe generated cases, including a case
+that later fails; `[triangle_coverage]` counters describe verified cases only.
+
+Enable RTL code coverage for one test or the full regression:
+
+```sh
+make test TEST=clip_left COVERAGE=1
+make coverage CASES=1000 VERBOSE=0
+# Set geometry diversity without multiplying the total random budget:
+make coverage CASES=100000 SEEDS=64 VERBOSE=0
+# A single-geometry-seed regression with instrumentation:
+make regression COVERAGE=1 CASES=1000 VERBOSE=0
+```
+
+Instrumented executables use `build/<mode>-coverage/`, independently of ordinary
+builds. `--coverage-line` measures Verilator line/block points, including branch
+paths; `--coverage-toggle` measures signal bit transitions. Verilator's `v_line`,
+`v_branch`, and `v_toggle` groups are reported separately when present. This measures
+the elaborated Geometry Engine RTL, not the host C/C++ software. The simulation wrapper and GPU memory model are
+excluded from instrumentation, and summary totals include only sources in `hw/`.
+Initial startup reset counters are cleared; later test resets are covered.
+
+Each simulation writes a temporary `<test>-g<seed>-t<timing>.dat`. Immediately after
+it finishes, the runner merges available points into a single `coverage.dat` and
+deletes that simulation's `.dat` and `.bin`. The previous aggregate is replaced only
+when the merge succeeds. At the end, `VERILATOR_COVERAGE` creates the exports:
+
+- `coverage.dat`: merged instrumentation counts across this invocation.
+- `coverage.info`: LCOV export, usable with external LCOV viewers.
+- `annotated/`: annotated RTL sources with uncovered points marked.
+- `coverage.log`: analyzer commands and diagnostics.
+- `coverage.md` / `coverage.json`: total and per-source line/branch and toggle
+  point coverage, alongside triangle coverage.
+
+Triangle and RTL coverage are checkpointed at startup, every 1,000 verified cases,
+and on normal completion. RTL checkpoints use atomic replacement, so a hard timeout
+or assertion abort preserves the last completed checkpoint. Incomplete simulations
+contribute their last available counters and mark the report incomplete; subsequent
+activity may be absent. Missing counters and analyzer errors return nonzero, while
+coverage totals are still printed. An export failure also preserves the totals
+computed from the merged data.
+
+Report aggregation checks can be run independently of RTL compilation:
+
+```sh
+python3 -m unittest discover -s checks -v
+```

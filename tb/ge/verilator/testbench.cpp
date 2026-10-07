@@ -1,6 +1,9 @@
 #include "Vtb_top.h"
 #include "verilated.h"
 #include "verilated_fst_c.h"
+#if VM_COVERAGE
+#include "verilated_cov.h"
+#endif
 #include "sw/ge_test.h"
 
 #include <array>
@@ -48,6 +51,20 @@ static uint64_t input_stalls;
 static uint64_t output_stalls;
 
 static FILE *output_file;
+static std::string coverage_file;
+
+static void save_coverage() {
+#if VM_COVERAGE
+    if (dut && !coverage_file.empty() && coverage_file != "-") {
+        // A killed process must leave its previous complete checkpoint intact.
+        std::string temporary = coverage_file + ".tmp";
+        VerilatedCov::write(temporary.c_str());
+        if (std::rename(temporary.c_str(), coverage_file.c_str()) != 0) {
+            throw std::runtime_error("cannot save coverage checkpoint");
+        }
+    }
+#endif
+}
 static const char *const stages[] = {
     "unpack",
     "matrix",
@@ -252,6 +269,9 @@ extern "C" void test_log(const char *message) {
 extern "C" void test_phase(const char *name, unsigned index) {
     phase = name;
     triangle_index = index;
+    if (phase == "coverage_checkpoint") {
+        save_coverage();
+    }
 }
 
 extern "C" void device_reset(unsigned stage) {
@@ -475,7 +495,7 @@ class bridge_device : public abstract_device_t {
                 if (*bytes) {
                     next_phase += char(*bytes);
                 } else {
-                    phase = next_phase;
+                    test_phase(next_phase.c_str(), triangle_index);
                     next_phase.clear();
                 }
 
@@ -549,10 +569,10 @@ int main(int argc, char **argv) {
     int result = 1;
 
     try {
-        if (argc != 19) {
+        if (argc != 20) {
             throw std::runtime_error(
                 "usage: simulator MODE TEST SEED TIMING_SEED CASES VERBOSITY TIMEOUT LATENCY "
-                "PAUSE HOLD XY Z UV COLOR W WAVEFORM FIRMWARE OUTPUT");
+                "PAUSE HOLD XY Z UV COLOR W WAVEFORM FIRMWARE OUTPUT COVERAGE");
         }
         mode = argv[1];
         config.test = test_count;
@@ -582,6 +602,12 @@ int main(int argc, char **argv) {
 
         waveform = argv[16];
         firmware = argv[17];
+        coverage_file = argv[19];
+#if !VM_COVERAGE
+        if (coverage_file != "-") {
+            throw std::runtime_error("coverage requested without an instrumented build");
+        }
+#endif
         output_file = fopen(argv[18], "wb");
         if (!output_file) {
             throw std::runtime_error("cannot open output artifact");
@@ -609,6 +635,10 @@ int main(int argc, char **argv) {
 
         dut->rst_n_i = 1;
         tick();
+#if VM_COVERAGE
+        // Discard initial reset activity; resets exercised by tests still count.
+        VerilatedCov::zero();
+#endif
         if (strcmp(mode, "standalone") == 0) {
             result = run_test(&config);
         } else if (strcmp(mode, "spike") == 0) {
@@ -632,6 +662,14 @@ int main(int argc, char **argv) {
 
     if (dut) {
         dut->final();
+#if VM_COVERAGE
+        try {
+            save_coverage();
+        } catch (const std::exception &error) {
+            fprintf(stderr, "[wrapper] FAIL %s\n", error.what());
+            result = 1;
+        }
+#endif
     }
 
     if (trace) {

@@ -1,5 +1,6 @@
 /* One GPU memory, shared by the software port and the timed agent.
  * Timing and pending requests belong to the wrapper, not to this storage. */
+/* verilator coverage_off */
 module memory (
     input logic clk_i,
 
@@ -40,3 +41,4 @@ module memory (
     end
 
 endmodule : memory
+/* verilator coverage_on */

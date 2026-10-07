@@ -35,7 +35,9 @@ enum test_id {
     TEST_ATTRIBUTES,
     TEST_CONSECUTIVE,
     TEST_BACKPRESSURE,
-    TEST_RESET
+    TEST_RESET,
+    TEST_PLANE_STATES,
+    TEST_OUTPUT_COUNTS
 };
 
 /* Packed SV records: 3*208 input bits, 3*183 output bits, each padded to 640.

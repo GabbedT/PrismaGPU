@@ -30,6 +30,8 @@ const char *const test_names[] = {
     "consecutive",
     "backpressure",
     "reset",
+    "plane_states",
+    "output_counts",
 };
 
 const unsigned test_count = sizeof(test_names) / sizeof(test_names[0]);
@@ -145,8 +147,56 @@ unsigned generate_triangle(unsigned test, unsigned index, uint32_t *seed, triang
 
     if (test == TEST_CULLING) {
         geometry->cull = index % 3;
-        geometry->front = index / 3;
-        count = 6;
+        geometry->front = (index / 3) % 2;
+        if (index / 6 == 1) {
+            vertex v = input->v[0];
+            input->v[0] = input->v[1];
+            input->v[1] = v;
+        } else if (index / 6 == 2) {
+            for (unsigned v = 0; v < 3; ++v) {
+                input->v[v].f[1] = input->v[v].f[0];
+            }
+        }
+        count = 18;
+    }
+
+    if (test == TEST_PLANE_STATES) {
+        unsigned plane = index / 27;
+        unsigned signature = index % 27;
+        unsigned axis = plane / 2;
+        double bound = plane == 5 ? 0 : (plane == 0 || plane == 3 ? -1 : 1);
+        double direction = plane == 0 || plane == 3 || plane == 5 ? -1 : 1;
+        for (unsigned v = 0; v < 3; ++v) {
+            unsigned state = signature % 3;
+            signature /= 3;
+            if (state == 1) {
+                input->v[v].f[axis] = bound + direction * (0.25 + v * 0.125);
+            } else if (state == 2) {
+                input->v[v].f[axis] = bound;
+            }
+        }
+        count = 6 * 27;
+    }
+
+    if (test == TEST_OUTPUT_COUNTS) {
+        /* Fixed Q16.16 inputs found with the independent reference model.
+         * Row n must produce exactly n triangles after multi-plane clipping. */
+        static const double positions[8][3][3] = {
+            {{3.625, -1.3125, 1.0625}, {3.125, -1.75, 0.875}, {0.5, 2.75, 4.1875}},
+            {{2, 0.5625, 0.125}, {-0.625, 1, -2.9375}, {-1, 2.75, 4.125}},
+            {{1, 1.125, 0.4375}, {1.125, 0.1875, 3.4375}, {-0.375, -3.5625, 3.375}},
+            {{0.8125, -1.375, -2.75}, {-1, 1.25, 3.125}, {3.375, -1.25, -2.375}},
+            {{-1, -3.25, -2.6875}, {1.6875, 1.0625, 1.125}, {-0.4375, -0.875, 0.5625}},
+            {{-0.5625, 1.375, -3.375}, {-1.5625, 1.3125, -0.0625}, {2.25, -1.1875, 3.9375}},
+            {{1.6875, 3.9375, -0.625}, {-3.8125, -3.625, 0.6875}, {0.9375, 0.1875, 0.75}},
+            {{-3.6875, -0.375, -1.5625}, {0.6875, -1.0625, 0.4375}, {2.375, 2.25, 2.9375}},
+        };
+        for (unsigned v = 0; v < 3; ++v) {
+            for (unsigned axis = 0; axis < 3; ++axis) {
+                input->v[v].f[axis] = positions[index][v][axis];
+            }
+        }
+        count = 8;
     }
 
     if (test == TEST_RANDOM) {

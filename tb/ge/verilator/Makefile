@@ -7,11 +7,12 @@ HERE := $(CURDIR)
 MODE ?= standalone
 TEST ?= identity
 SEED ?= 1
+SEEDS ?= 16
 TIMING_SEED ?= 2
 CASES ?= 100
 VERBOSE ?= 1
 TIMEOUT ?= 200000
-WALL_TIMEOUT ?= 300
+WALL_TIMEOUT ?= auto
 
 # Memory-agent timing.
 LATENCY ?= 3
@@ -26,11 +27,13 @@ COLOR_TOL ?= 3
 W_TOL ?= 0.001
 
 WAVE ?= 0
+COVERAGE ?= 0
 OUT ?= out
 JOBS ?= 2
 
 # Build tools and Spike installation.
 VERILATOR ?= verilator
+VERILATOR_COVERAGE ?= verilator_coverage
 RISCV_CC ?= riscv64-unknown-elf-gcc
 SPIKE_DIR ?= /usr/local
 
@@ -38,11 +41,12 @@ SPIKE_DIR ?= /usr/local
 SPIKE_INCLUDE ?= $(SPIKE_DIR)/include
 SPIKE_LIB ?= $(SPIKE_DIR)/lib
 
-export MODE TEST SEED TIMING_SEED CASES VERBOSE TIMEOUT WALL_TIMEOUT LATENCY PAUSE OUTPUT_HOLD
+export MODE TEST SEED SEEDS TIMING_SEED CASES VERBOSE TIMEOUT WALL_TIMEOUT LATENCY PAUSE OUTPUT_HOLD
 export XY_TOL Z_TOL UV_TOL COLOR_TOL W_TOL WAVE OUT SPIKE_DIR SPIKE_INCLUDE SPIKE_LIB
-export RISCV_CC VERILATOR
+export RISCV_CC VERILATOR VERILATOR_COVERAGE COVERAGE
 
-BUILD := build/$(MODE)
+BUILD := build/$(MODE)$(if $(filter 1,$(COVERAGE)),-coverage)
+COVERAGE_FLAGS := $(if $(filter 1,$(COVERAGE)),--coverage-line --coverage-toggle)
 SW := sw/test.c sw/golden_model.c sw/triangle_gen.c
 OBJECTS := $(addprefix $(BUILD)/,$(notdir $(SW:.c=.o)))
 
@@ -57,11 +61,14 @@ else ifneq ($(MODE),standalone)
 $(error MODE must be standalone or spike)
 endif
 
-.PHONY: test regression standalone spike waveform list build clean config
+.PHONY: test regression coverage standalone spike waveform list build clean config
 
 # The runner builds once, then continues through failures and returns nonzero.
 test regression list:
 	@python3 run.py $@
+
+coverage:
+	@COVERAGE=1 python3 run.py coverage
 
 standalone:
 	@$(MAKE) test MODE=standalone
@@ -81,7 +88,7 @@ $(BUILD)/%.o: sw/%.c sw/ge_test.h
 # Record tool settings so changing a Spike prefix invalidates the executable.
 config:
 	@mkdir -p $(BUILD)
-	@printf '%s\n' '$(VERILATOR) $(SPIKE_FLAGS) $(SPIKE_LINK)' > $(BUILD)/config.tmp
+	@printf '%s\n' '$(VERILATOR) $(COVERAGE_FLAGS) $(SPIKE_FLAGS) $(SPIKE_LINK)' > $(BUILD)/config.tmp
 	@cmp -s $(BUILD)/config.tmp $(BUILD)/config || cp $(BUILD)/config.tmp $(BUILD)/config
 
 $(BUILD)/config: config
@@ -92,7 +99,7 @@ $(BUILD)/obj/Vtb_top: Makefile testbench.cpp sv/tb_top.sv sv/memory.sv \
                     sw/ge_test.h $(OBJECTS) $(RTL) $(BUILD)/config
 	@# Verilator's link rule does not track the external C objects.
 	rm -f $@
-	$(VERILATOR) --cc --exe --build -j $(JOBS) --assert --trace-fst --top-module tb_top -Wno-fatal \
+	$(VERILATOR) --cc --exe --build -j $(JOBS) --assert --trace-fst $(COVERAGE_FLAGS) --top-module tb_top -Wno-fatal \
 	    -F $(ROOT)/hw/_prismaGPU.f sv/memory.sv sv/tb_top.sv $(HERE)/testbench.cpp $(addprefix $(HERE)/,$(OBJECTS)) \
 	    --Mdir $(BUILD)/obj -CFLAGS '-std=c++17 -O2 -I$(HERE) $(SPIKE_FLAGS)' \
 	    -LDFLAGS '-lm $(SPIKE_LINK)'

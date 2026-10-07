@@ -1,3 +1,5 @@
+/* Instrument the hardware modules, not the simulation wrapper. */
+/* verilator coverage_off */
 module tb_top (
     input logic clk_i,
     input logic rst_n_i,
@@ -163,3 +165,4 @@ module tb_top (
     );
 
 endmodule : tb_top
+/* verilator coverage_on */
