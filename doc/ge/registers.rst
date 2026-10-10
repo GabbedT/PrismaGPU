@@ -248,7 +248,11 @@ GE_CTRL: configuration and commands
      - ``enable_pcounters``
      - RW
      - Allow performance counter increments.
-   * - 31:9
+   * - 9
+     - ``raster_forward``
+     - RW
+     - Bypass the packer and send processed triangles directly to the raster engine.
+   * - 31:10
      - Reserved
      - —
      - Read as zero.
@@ -262,7 +266,7 @@ while enable is zero, but no vertices are consumed until enable is set.
 A write to byte 0 updates **all** fields 7:0. A START or STOP write therefore
 also updates enable, front_face, cull_mode, and matrix_forward. Include the
 persistent configuration in the written value to preserve it. Byte 1 controls
-only bit 8; bytes 2 and 3 have no effect.
+bits 8 and 9; bytes 2 and 3 have no effect.
 
 For example, after loading the matrix and viewport, ``GE_CTRL=0x00000103``
 enables the GE, issues START, and enables counters, with CW, NONE, and
@@ -270,6 +274,14 @@ forward disabled, when bytes 0 and 1 are written. A later read returns
 ``0x00000101``. For STOP with the same settings, write ``0x00000105``; for
 soft reset, write ``0x00000109``. The persistent value after either command
 is still ``0x00000101``.
+
+For direct raster output with counters enabled, write ``GE_CTRL=0x00000303``
+to enable the GE and issue START. The persistent value reads as
+``0x00000301``. ``raster_forward`` resets to zero on hardware reset and
+is preserved by soft reset. It selects the destination after culling;
+``matrix_forward`` still diverts input vertices before clipping, so enabling
+both does not send newly consumed vertices to the raster engine. See
+:doc:`packer` for the direct transfer contract and mode changes.
 
 GE_STATUS: live status
 ----------------------
@@ -381,7 +393,8 @@ or vertices. It does not increment
 for forwarded vertices.
 
 ``GE_TRI_OUTPUT`` increments when a processed triangle is accepted by
-the packer. It does not count external memory writes. It can exceed TRI_INPUT because clipping may
+the selected output: the packer, or the raster engine when
+``raster_forward=1``. It does not count external memory writes. It can exceed TRI_INPUT because clipping may
 produce several triangles from one input.
 
 ``GE_TRI_DISCARDED`` adds trivial clip-test rejects and culler discards,

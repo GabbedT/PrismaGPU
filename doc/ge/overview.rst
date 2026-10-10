@@ -6,8 +6,9 @@ in screen coordinates. Each input triangle consists of three vertices,
 with a homogeneous position, texture coordinates, and a color. The engine
 applies a 4 × 4 matrix, clips geometry to the visible volume, performs
 perspective division, maps positions into the viewport, and removes triangles
-that should not be drawn. It then serializes the remaining triangles into
-128-bit words.
+that should not be drawn. It either serializes the remaining triangles into
+128-bit words or forwards complete processed triangles directly to the raster
+engine, bypassing the output memory path.
 
 The matrix can represent a combined transformation, such as model, view,
 and projection, provided software supplies the coefficients already combined.
@@ -22,10 +23,10 @@ Input triangles carry all three vertices explicitly; there is no indexed
 vertex format.
 
 .. figure:: ../img/ge_pipeline.svg
-   :alt: Input, matrix, clipping, perspective division, viewport, culling, and output
+   :alt: Input, matrix, clipping, perspective division, viewport, culling, and memory or direct raster output
    :width: 100%
 
-   The geometry pipeline and its input and output buffers.
+   The geometry pipeline, its buffers, and the two output destinations.
 
 .. Editorial: This figure can be replaced by a schematic of the pipeline stage.
 
@@ -46,7 +47,8 @@ a division error, this buffer removes the whole group so that incomplete
 triangles cannot reach the output.
 
 The culler evaluates orientation in screen coordinates. Surviving triangles
-enter the packer, which produces five output words for each triangle.
+enter the packer, which produces five output words for each triangle, or
+go directly to the raster engine when ``GE_CTRL.raster_forward=1``.
 
 Buffers let adjacent stages work at different rates. When a downstream
 stage cannot accept more data, it holds up the stages that feed it. This
@@ -64,6 +66,12 @@ output words, and reports transfer completion. Buffer addresses are configured
 through the GE registers for that unit to use. Address traversal, range
 checking, and the convention for inclusive or exclusive end addresses belong
 to the system's memory integration.
+
+Direct raster mode adds a valid signal and a 600-bit processed triangle
+output. It avoids packing and DDR writes for newly processed triangles.
+There is no ready input: the raster engine must accept every valid transfer.
+The packer's backpressure is ignored in this mode. Input memory transfers
+remain the same. See :doc:`packer` for details.
 
 The standard configuration buffers 16 input words and 16 output words.
 The input producer must respect the available capacity; an excess write

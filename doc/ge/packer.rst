@@ -8,11 +8,42 @@ its encoded reciprocal. Each triangle also carries its signed doubled
 screen area for downstream rasterization. Use the processed format when
 decoding output.
 
+Direct raster output
+--------------------
+
+With ``GE_CTRL.raster_forward=1``, surviving triangles are sent directly
+from the culling output to ``raster_triangle_o``, a 600-bit ``proc_triangle_t``
+containing all three processed vertices and the signed doubled screen area.
+It has the same useful bits as the packed format below, without the 40 padding
+bits or five-word serialization.
+
+The raster engine accepts a complete triangle on each rising clock edge
+where ``raster_valid_o=1``. There is no ready or stall input from the raster
+engine; it must have capacity for every valid transfer, including transfers
+on consecutive cycles. Data is meaningful only with valid asserted. Clearing
+GE enable or asserting hardware/soft reset suppresses raster valid, so a
+triangle held while the GE is disabled is not transferred repeatedly.
+STOP pauses input consumption while in-flight triangles continue to drain.
+
+In this mode the packer accepts no new triangles and its backpressure cannot
+stall the geometry pipeline. With an initially empty packer, the output FIFO
+therefore stays empty and no new output DDR writes are needed. Triangles and
+words already accepted in memory mode remain buffered and may still serialize
+or be read; selecting raster mode does not flush them. Soft reset flushes both
+paths while preserving configuration.
+
+The destination setting is live. Change it with no affected pipeline data in
+flight, and drain pending memory output or use soft reset before switching
+jobs if no earlier DDR output should remain. Clearing ``raster_forward``
+restores packer acceptance and backpressure. ``GE_TRI_OUTPUT`` counts accepted
+triangles in either mode; DONE and interrupts still use the existing external
+completion input, with no automatic raster completion event.
+
 .. figure:: ../img/ge_packer.svg
-   :alt: Triangle queue, current triangle, word serialization, and output queue
+   :alt: Processed triangles routed to the packer queues or directly to the raster engine
    :width: 100%
 
-   Two queues separate triangle acceptance from output word transfers.
+   Memory mode uses two queues; direct raster mode bypasses them.
 
 .. Editorial: This figure can be replaced by a schematic of the packer stage.
 

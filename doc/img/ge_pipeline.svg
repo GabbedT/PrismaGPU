@@ -35,6 +35,12 @@
 <rect x="215" y="170" width="160" height="90" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
 <text x="295" y="206" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Output FIFO</text>
 <text x="295" y="231" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">128 bits</text>
+<rect x="405" y="280" width="160" height="65" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
+<text x="485" y="307" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Raster engine</text>
+<text x="485" y="329" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">600 bits + valid</text>
+<text x="485" y="160" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#334155">raster_forward = 0</text>
+<path d="M 580 215 L 580 312 L 565 312" fill="none" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="595" y="300" font-family="sans-serif" font-size="13" fill="#334155">raster_forward = 1</text>
 <path d="M 185 70 L 215 70" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
 <path d="M 375 70 L 405 70" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
 <path d="M 565 70 L 595 70" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
@@ -45,5 +51,5 @@
 <path d="M 785 215 L 755 215" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
 <path d="M 595 215 L 565 215" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
 <path d="M 405 215 L 375 215" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
-<text x="25" y="345" font-family="sans-serif" font-size="14" fill="#334155">Matrix forward results go to registers. Backpressure travels from output toward input.</text>
+<text x="25" y="375" font-family="sans-serif" font-size="14" fill="#334155">Packer backpressure applies only in memory mode. Matrix forward results go to registers.</text>
 </svg>
