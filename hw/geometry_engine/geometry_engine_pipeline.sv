@@ -61,14 +61,29 @@ module geometry_engine_pipeline (
 //====================================================================================
 
     vertex_t matrix_vertex;
+    logic matrix_valid, matrix_busy;
+    logic matrix_forward_product_ff, matrix_forward_ff;
+
+    always_ff @(posedge clk_i) begin
+        if (!stall_o) begin
+            matrix_forward_product_ff <= forward_back_i;
+            matrix_forward_ff <= matrix_forward_product_ff;
+        end
+    end
 
     matrix_engine matrix_transform (
+        .clk_i         ( clk_i         ),
+        .rst_n_i       ( rst_n_i       ),
+        .stall_i       ( stall_o       ),
         .vertex_i      ( vertex_i      ),
+        .valid_i       ( valid_i       ),
         .coefficient_i ( coefficient_i ),
-        .vertex_o      ( matrix_vertex )
+        .vertex_o      ( matrix_vertex ),
+        .valid_o       ( matrix_valid  ),
+        .busy_o        ( matrix_busy   )
     );
 
-    assign forward_valid_o = valid_i & forward_back_i;
+    assign forward_valid_o = matrix_valid & matrix_forward_ff & !stall_o;
     assign forward_vertex_o = matrix_vertex;
 
 
@@ -77,15 +92,15 @@ module geometry_engine_pipeline (
 
     /* Keep the triangle stable until clipping and assembly complete. */
     triangle_buffer input_buffer (
-        .clk_i      ( clk_i                     ),
-        .rst_n_i    ( rst_n_i                   ),
-        .stall_i    ( clip_stall                ),
-        .accept_i   ( clip_done                 ),
-        .valid_i    ( valid_i & !forward_back_i ),
-        .vertex_i   ( matrix_vertex             ),
-        .full_o     ( triangle_full             ),
-        .valid_o    ( triangle_valid            ),
-        .triangle_o ( buffered_triangle         )
+        .clk_i      ( clk_i                             ),
+        .rst_n_i    ( rst_n_i                           ),
+        .stall_i    ( clip_stall                        ),
+        .accept_i   ( clip_done                         ),
+        .valid_i    ( matrix_valid & !matrix_forward_ff ),
+        .vertex_i   ( matrix_vertex                     ),
+        .full_o     ( triangle_full                     ),
+        .valid_o    ( triangle_valid                    ),
+        .triangle_o ( buffered_triangle                 )
     );
 
 
@@ -133,7 +148,7 @@ module geometry_engine_pipeline (
 //====================================================================================
 
     vertex_t perspective_vertex;
-    logic perspective_valid, perspective_error;
+    logic perspective_valid, perspective_error, perspective_busy;
 
     perspective_divider perspective_transform (
         .clk_i    ( clk_i              ),
@@ -143,7 +158,8 @@ module geometry_engine_pipeline (
         .valid_i  ( clip_valid_ff      ),
         .vertex_o ( perspective_vertex ),
         .error_o  ( perspective_error  ),
-        .valid_o  ( perspective_valid  )
+        .valid_o  ( perspective_valid  ),
+        .busy_o   ( perspective_busy   )
     );
 
 
@@ -251,9 +267,9 @@ module geometry_engine_pipeline (
     assign output_triangle_accept = valid_o & !stall_i;
     assign discarded_triangle_increment = {1'b0, clip_discard} + {1'b0, (cull_discard & !stall_i)};
 
-    /* Include partial input triangles and the final cull/discard stage. */
-    assign pipeline_busy = (input_vertex_count != '0) | (valid_i & !forward_back_i) |
-                           triangle_valid | clip_valid | clip_valid_ff | perspective_valid |
+    /* Include pending matrix results, partial triangles and the final cull/discard stage. */
+    assign pipeline_busy = (input_vertex_count != '0) | (valid_i & !forward_back_i) | matrix_busy |
+                           triangle_valid | clip_valid | clip_valid_ff | perspective_busy |
                            perspective_valid_ff | viewport_valid | processed_valid | valid_o | cull_discard;
 
     assign busy_o = pipeline_busy;
