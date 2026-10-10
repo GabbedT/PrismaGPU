@@ -74,7 +74,7 @@ module tb_top (
         dut.pipeline.viewport_valid && !dut.pipeline.viewport_stall,
         dut.pipeline.perspective_valid && !dut.pipeline.perspective_stall,
         dut.pipeline.clip_valid && !dut.pipeline.clip_stall,
-        dut.pipeline.valid_i && !dut.pipeline.stall_o,
+        dut.pipeline.matrix_valid && !dut.pipeline.stall_o,
         dut.vertex_valid && !dut.unpacker_stall
     };
 
