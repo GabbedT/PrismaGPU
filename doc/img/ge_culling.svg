@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 245" role="img">
+<title>GE culling functional diagram</title>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#2563a6"/></marker></defs>
+<rect width="1180" height="245" rx="14" fill="#f8fafc"/>
+<rect x="25" y="25" width="160" height="90" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
+<text x="105" y="61" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Screen triangle</text>
+<text x="105" y="86" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">3 vertices</text>
+<rect x="215" y="25" width="160" height="90" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
+<text x="295" y="61" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">4 differences</text>
+<text x="295" y="86" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Edge distances</text>
+<rect x="405" y="25" width="160" height="90" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
+<text x="485" y="61" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">2 products</text>
+<text x="485" y="86" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Edge products</text>
+<rect x="595" y="25" width="160" height="90" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
+<text x="675" y="61" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Register</text>
+<text x="675" y="86" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">products / triangle</text>
+<rect x="785" y="25" width="160" height="90" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
+<text x="865" y="61" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Difference</text>
+<text x="865" y="86" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Signed area</text>
+<rect x="975" y="25" width="160" height="90" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
+<text x="1055" y="61" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Selection</text>
+<text x="1055" y="86" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">CW / CCW / zero</text>
+<path d="M 185 70 L 215 70" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M 375 70 L 405 70" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M 565 70 L 595 70" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M 755 70 L 785 70" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M 945 70 L 975 70" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="25" y="200" font-family="sans-serif" font-size="14" fill="#334155">D &gt; 0: CW; D &lt; 0: CCW. Zero area discarded. Passing triangles carry signed D: 51 bits, 16 fractional.</text>
+</svg>

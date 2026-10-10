@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 390" role="img">
+<title>GE pipeline functional diagram</title>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#2563a6"/></marker></defs>
+<rect width="1180" height="390" rx="14" fill="#f8fafc"/>
+<rect x="25" y="25" width="160" height="90" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
+<text x="105" y="61" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Input FIFO</text>
+<text x="105" y="86" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">128 bits</text>
+<rect x="215" y="25" width="160" height="90" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
+<text x="295" y="61" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Unpacker</text>
+<text x="295" y="86" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">3 vertices / 5 words</text>
+<rect x="405" y="25" width="160" height="90" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
+<text x="485" y="61" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">4 × 4 matrix</text>
+<text x="485" y="86" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">4 parallel rows</text>
+<rect x="595" y="25" width="160" height="90" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
+<text x="675" y="61" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Triangle buffer</text>
+<text x="675" y="86" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">3 vertices</text>
+<rect x="785" y="25" width="160" height="90" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
+<text x="865" y="61" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Clipping</text>
+<text x="865" y="86" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">6 planes</text>
+<rect x="975" y="25" width="160" height="90" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
+<text x="1055" y="61" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Perspective divide</text>
+<text x="1055" y="86" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">x y z u v / w</text>
+<rect x="975" y="170" width="160" height="90" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
+<text x="1055" y="206" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Viewport</text>
+<text x="1055" y="231" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">screen coordinates</text>
+<rect x="785" y="170" width="160" height="90" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
+<text x="865" y="206" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Processed buffer</text>
+<text x="865" y="231" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">3 vertices + error</text>
+<rect x="595" y="170" width="160" height="90" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
+<text x="675" y="206" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Culling</text>
+<text x="675" y="231" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">area and winding</text>
+<rect x="405" y="170" width="160" height="90" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
+<text x="485" y="206" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Packer</text>
+<text x="485" y="231" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">5 words / triangle</text>
+<rect x="215" y="170" width="160" height="90" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
+<text x="295" y="206" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Output FIFO</text>
+<text x="295" y="231" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">128 bits</text>
+<path d="M 185 70 L 215 70" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M 375 70 L 405 70" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M 565 70 L 595 70" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M 755 70 L 785 70" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M 945 70 L 975 70" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M 1055 115 L 1055 170" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M 975 215 L 945 215" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M 785 215 L 755 215" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M 595 215 L 565 215" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M 405 215 L 375 215" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="25" y="345" font-family="sans-serif" font-size="14" fill="#334155">Matrix forward results go to registers. Backpressure travels from output toward input.</text>
+</svg>
