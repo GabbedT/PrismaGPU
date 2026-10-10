@@ -14,6 +14,7 @@ module geometry_engine_registers (
     output front_face_t front_face_o,
     output cull_mode_t cull_mode_o,
     output logic forward_back_o,
+    output logic raster_forward_o,
     output logic enable_pcounters_o,
 
     /* Memory unit configuration; full 32-bit byte addresses. */
@@ -126,6 +127,7 @@ module geometry_engine_registers (
 
                     if (write_strobe_i[1]) begin
                         control_register.enable_pcounters <= write_data_i[1][0];
+                        control_register.raster_forward   <= write_data_i[1][1];
                     end
                 end
             end
@@ -155,6 +157,9 @@ module geometry_engine_registers (
 
     /* Forward back matrix results */
     assign forward_back_o = control_register.matrix_forward;
+
+    /* Forward processed triangles directly to the raster engine. */
+    assign raster_forward_o = control_register.raster_forward;
 
     /* Enable performance counters */
     assign enable_pcounters_o = control_register.enable_pcounters;
@@ -326,7 +331,7 @@ module geometry_engine_registers (
             read_data_o = '0;
 
             case (read_address)
-                GE_CTRL: read_data_o = {{23{1'b0}}, control_read};
+                GE_CTRL: read_data_o = {{22{1'b0}}, control_read};
 
                 GE_STATUS: read_data_o = {{27{1'b0}}, status_register};
 

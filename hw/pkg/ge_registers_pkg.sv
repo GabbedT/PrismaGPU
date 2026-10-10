@@ -69,8 +69,9 @@ package ge_registers_pkg;
     } ge_registers_t;
 
 
-    /* GE_CTRL[8:0]; bits [31:9] are reserved and read as zero. */
+    /* GE_CTRL[9:0]; bits [31:10] are reserved and read as zero. */
     typedef struct packed {
+        logic raster_forward;              /* [9]: bypass packer, send triangles to raster */
         logic enable_pcounters;            /* [8] */
         logic matrix_forward;              /* [7] */
         cull_mode_t cull_mode;             /* [6:5]: NONE, FRONT, BACK */

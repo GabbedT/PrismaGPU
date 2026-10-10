@@ -10,24 +10,28 @@ module geometry_engine #(
     input logic rst_n_i,
     output logic interrupt_o,
 
-    /* External memory unit; byte addresses and completed read/write job. */
+    /* External memory unit; byte addresses and completed read/write job */
     output logic [31:0] vertex_buffer_base_o,
     output logic [31:0] vertex_buffer_end_o,
     output logic [31:0] primitive_buffer_base_o,
     output logic [31:0] primitive_buffer_end_o,
     input logic done_i,
 
-    /* Input FIFO; writes on full are ignored unless a read makes room. */
+    /* Input FIFO; writes on full are ignored unless a read makes room */
     input logic write_i,
     input logic [127:0] write_data_i,
     output logic [$clog2(INPUT_FIFO_DEPTH + 1) - 1:0] input_word_count_o,
 
-    /* Output FIFO; synchronous reads, ignored on zero count. */
+    /* Output FIFO; synchronous reads, ignored on zero count */
     input logic read_i,
     output logic [127:0] read_data_o,
     output logic [$clog2(OUTPUT_FIFO_DEPTH + 1) - 1:0] output_word_count_o,
 
-    /* Register write; addresses are word offsets. */
+    /* Direct raster transfer; receiver accepts every cycle with valid high */
+    output logic raster_valid_o,
+    output proc_triangle_t raster_triangle_o,
+
+    /* Register write; addresses are word offsets */
     input logic register_write_i,
     input logic [5:0] register_write_address_i,
     input logic [3:0][7:0] register_write_data_i,
@@ -41,7 +45,7 @@ module geometry_engine #(
     output logic register_read_error_o
 );
 
-    logic enable, soft_reset, enable_pcounters, forward_back;
+    logic enable, soft_reset, enable_pcounters, forward_back, raster_forward;
     logic start_processing, stop_processing, processing;
     logic datapath_rst_n, pipeline_stall, pipeline_input_stall, unpacker_stall, packer_stall;
     logic busy, vertex_valid, triangle_valid, forward_valid;
@@ -61,12 +65,15 @@ module geometry_engine #(
 //      CONTROL
 //====================================================================================
 
-    /* Soft reset flushes data and counters, preserving register configuration. */
+    /* Soft reset flushes data and counters, preserving register configuration */
     assign datapath_rst_n = rst_n_i & !soft_reset;
-    assign pipeline_stall = !enable | packer_stall;
+    assign pipeline_stall = !enable | (packer_stall & !raster_forward);
     assign unpacker_stall = !enable | !processing | stop_processing | pipeline_input_stall;
 
-        /* STOP pauses input consumption; triangles already in the pipeline drain. */
+    assign raster_triangle_o = triangle;
+    assign raster_valid_o = triangle_valid & enable & raster_forward;
+
+        /* STOP pauses input consumption; triangles already in the pipeline drain */
         always_ff @(posedge clk_i `ifdef ASYNC or negedge rst_n_i `endif) begin
             if (!rst_n_i) begin
                 processing <= 1'b0;
@@ -97,6 +104,7 @@ module geometry_engine #(
         .cull_mode_o  ( cull_mode  ),
 
         .forward_back_o   ( forward_back   ),
+        .raster_forward_o ( raster_forward ),
         .forward_vertex_i ( forward_vertex ),
         .forward_valid_i  ( forward_valid  ),
 
@@ -205,8 +213,8 @@ module geometry_engine #(
         .rst_n_i ( datapath_rst_n ),
         .stall_o ( packer_stall   ),
 
-        .triangle_i ( triangle                ),
-        .valid_i    ( triangle_valid & enable ),
+        .triangle_i ( triangle                                  ),
+        .valid_i    ( triangle_valid & enable & !raster_forward ),
 
         .read_i       ( read_i & datapath_rst_n ),
         .read_data_o  ( read_data_o         ),

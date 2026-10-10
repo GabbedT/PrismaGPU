@@ -30,6 +30,60 @@ def counters():
 
 
 class RunnerArtifacts(unittest.TestCase):
+    def test_campaigns_drop_pass_logs_and_preserve_reports(self):
+        for action in ("test", "regression", "coverage"):
+            with self.subTest(action=action), tempfile.TemporaryDirectory() as directory:
+                def simulate(command, timeout, **callbacks):
+                    Path(command[-2]).write_bytes(b"triangle")
+                    if command[-1] != "-":
+                        Path(command[-1]).write_text("checkpoint")
+                    output = counters()
+                    callbacks["on_line"](output)
+                    return 0, output
+                with patch.dict(run.os.environ, settings(directory), clear=True), \
+                     patch.object(run.sys, "argv", ["run.py", action]), \
+                     patch.object(run.subprocess, "run", return_value=SimpleNamespace(returncode=0)), \
+                     patch.object(run, "execute", side_effect=simulate), \
+                     patch.object(run.CoverageAccumulator, "merge"), \
+                     redirect_stdout(io.StringIO()):
+                    self.assertEqual(run.main(), 0)
+                root = next(Path(directory).iterdir())
+                results = json.loads((root / "results.json").read_text())["results"]
+                self.assertTrue(results)
+                for result in results:
+                    if action == "test":
+                        self.assertEqual((root / result["log"]).read_text(), counters())
+                    else:
+                        self.assertIsNone(result["log"])
+                    self.assertIsNotNone(result["triangle_coverage"])
+                    self.assertIsNotNone(result["output_fingerprint"])
+                    self.assertTrue(result["reproduce"])
+                if action != "test":
+                    self.assertEqual(list(root.glob("*-g*-t*.log")), [])
+                self.assertTrue((root / "coverage.md").is_file())
+                self.assertTrue(json.loads((root / "coverage.json").read_text())["complete"])
+
+    def test_campaign_retains_failed_logs_and_diagnostics(self):
+        failures = (
+            (1, counters() + "FAIL phase=compare\n", "compare"),
+            (124, counters() + "FAIL phase=wall_timeout\n", "wall_timeout"),
+            (127, "FAIL phase=launch\n", "launch"),
+            (0, "PASS\n", "triangle_coverage"),
+            (0, counters(), "artifacts"),  # Missing output capture despite exit zero.
+        )
+        for code, output, diagnostic in failures:
+            with self.subTest(diagnostic=diagnostic), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                results, errors = [], []
+                with patch.object(run, "execute", return_value=(code, output)), \
+                     redirect_stdout(io.StringIO()):
+                    run.run_cases(settings(root), root, ["identity"], [2], results,
+                                  None, errors, keep_pass_logs=False)
+                self.assertNotEqual(results[0]["exit_code"], 0)
+                self.assertIn(diagnostic, (root / results[0]["log"]).read_text())
+                saved = json.loads((root / "results.json").read_text())["results"]
+                self.assertEqual(saved[0]["log"], results[0]["log"])
+
     def test_campaign_preserves_total_budget_and_wraps_geometry_seeds(self):
         cfg = settings("out")
         cfg.update(CASES="1003", SEEDS="4", SEED=str(2**32 - 1))
@@ -100,8 +154,11 @@ class RunnerArtifacts(unittest.TestCase):
                 Path(command[-2]).write_bytes(bytes([len(results)]))
                 return 0, counters()
             with patch.object(run, "execute", side_effect=simulate), redirect_stdout(io.StringIO()):
-                run.run_cases(settings(root), root, ["identity"], [2, 3], results, None, errors)
+                run.run_cases(settings(root), root, ["identity"], [2, 3], results, None, errors,
+                              keep_pass_logs=False)
             self.assertEqual([r["exit_code"] for r in results], [0, 1])
+            self.assertIsNone(results[0]["log"])
+            self.assertEqual(len(list(root.glob("*.log"))), 1)
             self.assertFalse(list(root.glob("*.bin")))
             self.assertIn("timing_invariance", (root / results[1]["log"]).read_text())
             self.assertEqual(results[0]["output_fingerprint"]["bytes"], 1)
@@ -123,9 +180,10 @@ class RunnerArtifacts(unittest.TestCase):
             cfg["COVERAGE"] = "1"
             with patch.object(run, "execute", side_effect=simulate), redirect_stdout(io.StringIO()):
                 run.run_cases(cfg, root, ["identity"], [2, 3], results,
-                              SimpleNamespace(merge=fail_merge), errors)
+                              SimpleNamespace(merge=fail_merge), errors, keep_pass_logs=False)
             self.assertEqual(len(results), 2)
             self.assertTrue(all(r["exit_code"] for r in results))
+            self.assertTrue(all((root / r["log"]).is_file() for r in results))
             self.assertEqual(len(errors), 2)
             self.assertFalse(list(root.glob("*.bin")) + list(root.glob("*.dat*")))
 

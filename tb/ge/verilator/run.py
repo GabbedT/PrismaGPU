@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build once, run isolated tests, and retain logs and reproduction commands."""
+"""Build once, run isolated tests, and retain reports and failure diagnostics."""
 
 import json
 import hashlib
@@ -298,11 +298,13 @@ def output_fingerprint(path):
     return {"bytes": size, "sha256": digest.hexdigest()}
 
 
-def run_cases(cfg, run_dir, selected, seeds, results, coverage, errors, report_config=None):
+def run_cases(cfg, run_dir, selected, seeds, results, coverage, errors, report_config=None,
+              keep_pass_logs=True):
     for name in selected:
         reference = None
         for timing in seeds:
             stem = f"{name}-g{cfg['SEED']}-t{timing}"
+            log_file = run_dir / (stem + ".log")
             wave = run_dir / (stem + ".fst") if cfg["WAVE"] == "1" else "-"
             output_file = run_dir / (stem + ".bin")
             coverage_file = run_dir / (stem + ".dat") if cfg["COVERAGE"] == "1" else "-"
@@ -318,7 +320,7 @@ def run_cases(cfg, run_dir, selected, seeds, results, coverage, errors, report_c
             merged = False
             displayed = 0
             try:
-                with (run_dir / (stem + ".log")).open("w") as log:
+                with log_file.open("w") as log:
                     monitor = RunMonitor(cfg, name, timing, log)
                     code, output = execute(command, int(cfg["WALL_TIMEOUT"]),
                                            on_line=monitor.line, on_wait=monitor.progress)
@@ -361,7 +363,10 @@ def run_cases(cfg, run_dir, selected, seeds, results, coverage, errors, report_c
                     coverage_file.unlink(missing_ok=True)
                     Path(str(coverage_file) + ".tmp").unlink(missing_ok=True)
 
-            (run_dir / (stem + ".log")).write_text(output)
+            if code or keep_pass_logs:
+                log_file.write_text(output)
+            else:
+                log_file.unlink(missing_ok=True)
             display = "\n".join(line for line in output[displayed:].splitlines()
                                 if not line.startswith(COVERAGE_PREFIXES))
             if display:
@@ -373,7 +378,7 @@ def run_cases(cfg, run_dir, selected, seeds, results, coverage, errors, report_c
                 "cases_requested": int(cfg["CASES"]) if name == "random" else None,
                 "timing_seed": timing,
                 "exit_code": code,
-                "log": stem + ".log",
+                "log": log_file.name if code or keep_pass_logs else None,
                 "reproduce": replay,
                 "triangle_coverage": counters,
                 "stalls": {key: int(value) for key, value in
@@ -473,10 +478,11 @@ def main():
                       f"random_budget={cfg['CASES']} timing_seeds={seeds}", flush=True)
                 for current, selected in campaign_plan(cfg):
                     run_cases(current, run_dir, selected, seeds, results, coverage, errors,
-                              report_config=cfg)
+                              report_config=cfg, keep_pass_logs=False)
             else:
                 selected = TESTS if action == "regression" else [cfg["TEST"]]
-                run_cases(cfg, run_dir, selected, seeds, results, coverage, errors)
+                run_cases(cfg, run_dir, selected, seeds, results, coverage, errors,
+                          keep_pass_logs=action == "test")
     except (OSError, ValueError, KeyboardInterrupt) as error:
         errors.append(f"runner interrupted: {error or type(error).__name__}")
     finally:

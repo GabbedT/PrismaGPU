@@ -53,7 +53,7 @@ module tb_top (
 );
 
     /* The GE already contains its input and output FIFOs (synchronous read). */
-    geometry_engine dut (.*);
+    geometry_engine dut (.*, .raster_valid_o(), .raster_triangle_o());
     memory mem (.*);
 
     assign idle_o = !dut.busy

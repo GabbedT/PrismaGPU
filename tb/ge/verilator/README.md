@@ -27,6 +27,9 @@ and reports under `out/`. `make regression` runs all 29 categories with two timi
 seeds: `TIMING_SEED` and the next 32-bit value, wrapping at `2^32`. It keeps the same
 geometry `SEED` for both runs and compares their output fingerprints after ignoring
 unused padding. It continues after failures and returns nonzero on any failure.
+Regression and coverage campaigns delete each passing test's `.log` after all
+checks finish; failed tests retain their complete logs. Reports and aggregate
+coverage artifacts are preserved.
 
 `make coverage` runs the directed categories with both timing seeds, then distributes
 the total `CASES` random budget across `SEEDS` geometry streams (default 16). Geometry
@@ -211,7 +214,11 @@ Each processing run checks counts, IRQ, buffer bounds, sentinels, and input inte
 ## Logs and debugging
 
 Each invocation creates a unique directory beneath `OUT`, containing `build.log`,
-per-test logs, `results.json`, coverage reports, and optional `.fst` waveforms.
+retained per-test logs, `results.json`, coverage reports, and optional `.fst` waveforms.
+`make test` retains its log even on success. `make regression` and `make coverage`
+retain per-test logs only on failure, including timeouts, invalid/missing coverage,
+artifact errors, and timing-invariance mismatches. Passing runs have `"log": null`
+in `results.json`; their counters, fingerprints, and replay commands remain available.
 Per-test `.bin` and `.dat` files are temporary and are removed after each simulation,
 including failed simulations. The final summary always reports functional and RTL
 coverage totals, pass/fail counts, and commands for replaying failures. Build failures
