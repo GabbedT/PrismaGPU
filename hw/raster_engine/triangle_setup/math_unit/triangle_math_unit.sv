@@ -4,7 +4,7 @@
 module triangle_math_unit #(
     parameter int MULTIPLIER_LATENCY = 0
 ) (
-    input logic clk_i, 
+    input logic clk_i,
     input logic rst_n_i,
     input logic ready_i,
 
@@ -23,17 +23,17 @@ module triangle_math_unit #(
     input logic signed [18:0] x2_i,
 
     /* Vertex Y coordinate */
-    input logic signed [17:0] y0_i, 
-    input logic signed [17:0] y1_i, 
-    input logic signed [17:0] y2_i, 
+    input logic signed [17:0] y0_i,
+    input logic signed [17:0] y1_i,
+    input logic signed [17:0] y2_i,
 
     /* Bounding Box reference */
     input logic signed [18:0] xref_i,
     input logic signed [17:0] yref_i,
 
     /* General attribute */
-    input logic signed [31:0] a0_i, 
-    input logic signed [31:0] a1_i, 
+    input logic signed [31:0] a0_i,
+    input logic signed [31:0] a1_i,
     input logic signed [31:0] a2_i,
 
     /* Triangle area */
@@ -41,17 +41,17 @@ module triangle_math_unit #(
     input reciprocal_t recip_area_i,
 
     /* Slope */
-    input logic signed [31:0] sx_i, 
-    
+    input logic signed [31:0] sx_i,
+
     /* Gradient */
-    input logic signed [31:0] gx_i, 
+    input logic signed [31:0] gx_i,
     input logic signed [31:0] gy_i,
 
     /* Output interface */
     output logic valid_o,
     output logic [87:0] result_o,
     output status_t status_o,
-    output logic busy_o,
+    output logic busy_o
 );
 
 //====================================================================================
@@ -206,7 +206,7 @@ module triangle_math_unit #(
     logic coordinates_valid;
 
     always_comb begin
-        coordinates_valid = (viewport_width_i > 0) & (viewport_width_i <= 640) & 
+        coordinates_valid = (viewport_width_i > 0) & (viewport_width_i <= 640) &
                             (viewport_height_i > 0) & (viewport_height_i <= 480);
 
         case (command_i)
@@ -221,7 +221,7 @@ module triangle_math_unit #(
             CALC_GRAD_Y: coordinates_valid &= valid_x(x0_i, 0) & valid_x(x1_i, 0) & valid_x(x2_i, 0);
 
             CALC_ATTR_REF: coordinates_valid &= valid_x(x0_i, 0) & valid_y(y0_i, 0) & valid_x(xref_i, 1) & valid_y(yref_i, 1);
-            
+
             default: coordinates_valid = 1'b0;
         endcase
     end
@@ -231,15 +231,13 @@ module triangle_math_unit #(
 //      ADD/SUB UNIT
 //====================================================================================
 
-    operand_sel_t add_a_sel, add_b_sel, mul_a_sel, mul_b_sel;
-    logic signed [87:0] add_a, add_b, mul_a_wide, mul_b_wide;
+    operand_sel_t add_a_sel, add_b_sel;
+    logic signed [87:0] add_a, add_b;
     logic signed [88:0] add_result;
     logic subtract;
 
     assign add_a_sel = instruction.src_a;
     assign add_b_sel = instruction.src_b;
-    assign mul_a_sel = instruction.src_a;
-    assign mul_b_sel = instruction.src_b;
     assign subtract = instruction.op == SUB;
 
         /* Select register source */
@@ -307,7 +305,6 @@ module triangle_math_unit #(
         /* Select register source */
         always_comb begin
             /* Default Values */
-            active_reciprocal = recip_area_i;
             recip_wide = '0;
 
             case (recip_sel)
@@ -318,16 +315,16 @@ module triangle_math_unit #(
         end
 
     triangle_reciprocal reciprocal_unit (
-        .clk_i(clk_i), 
-        .rst_n_i(rst_n_i),
-        .req_valid_i(recip_req_valid), 
-        .req_ready_o(recip_req_ready),
-        .denominator_i(recip_wide[37:0]), 
-        .den_format_i(den_format),
-        .resp_valid_o(recip_resp_valid), 
-        .resp_ready_i(recip_resp_ready),
-        .result_o(recip_result), 
-        .div_zero_o(recip_div_zero)
+        .clk_i          ( clk_i                ),
+        .rst_n_i        ( rst_n_i              ),
+        .req_valid_i    ( recip_req_valid      ),
+        .req_ready_o    ( recip_req_ready      ),
+        .denominator_i  ( recip_wide[37:0]     ),
+        .den_format_i   ( den_format           ),
+        .resp_valid_o   ( recip_resp_valid     ),
+        .resp_ready_i   ( recip_resp_ready     ),
+        .result_o       ( recip_result         ),
+        .div_zero_o     ( recip_div_zero       )
     );
 
     assign recip_req_valid = (state == ISSUE) & (instruction.op == RECIP) & !issue_error;
@@ -368,7 +365,7 @@ module triangle_math_unit #(
 
                 SRC_GY: mul_a_wide = 88'(gy_i);
             endcase
-            
+
             case (mul_b_sel)
                 SRC_T0: mul_b_wide = t0;
 
@@ -387,14 +384,14 @@ module triangle_math_unit #(
         end
 
     triangle_multiplier #(.LATENCY(MULTIPLIER_LATENCY)) multiplier_unit (
-        .clk_i(clk_i), 
+        .clk_i(clk_i),
         .rst_n_i(rst_n_i),
-        .req_valid_i(mul_req_valid), 
+        .req_valid_i(mul_req_valid),
         .req_ready_o(mul_req_ready),
-        .operand_a_i(mul_a_wide[53:0]), 
+        .operand_a_i(mul_a_wide[53:0]),
         .operand_b_i(mul_b_wide[32:0]),
-        .resp_valid_o(mul_resp_valid), 
-        .resp_ready_i(mul_resp_ready), 
+        .resp_valid_o (mul_resp_valid),
+        .resp_ready_i (mul_resp_ready),
         .product_o(mul_product)
     );
 
@@ -438,29 +435,19 @@ module triangle_math_unit #(
 
 
     always_comb begin
-        /* Default Values */
         raw_result = '0;
-        write_status = STATUS_OK;
 
         case (instruction.op)
-            ADD, SUB: begin
-                raw_result = add_result[87:0];
-
-                if (add_result[88] != add_result[87]) begin
-                    write_status = STATUS_OVERFLOW;
-                end
-            end
-
+            ADD, SUB: raw_result = add_result[87:0];
             MUL: raw_result = {mul_product[86], mul_product};
-
-            RECIP: begin
-                raw_result = {47'b0, recip_result};
-
-                if (recip_div_zero) begin
-                    write_status = STATUS_DIV_ZERO;
-                end
-            end
+            RECIP: raw_result = {47'b0, recip_result};
         endcase
+
+        if (instruction.last == LAST_OP &&
+            (command_reg == CALC_SLOPE || command_reg == CALC_GRAD_X || command_reg == CALC_GRAD_Y) &&
+            active_reciprocal.negative) begin
+            raw_result = -raw_result;
+        end
     end
 
 
@@ -476,23 +463,18 @@ module triangle_math_unit #(
         if (instruction.last == LAST_OP) begin
             case (command_reg)
                 CALC_SLOPE, CALC_GRAD_X, CALC_GRAD_Y: begin
-                    if (active_reciprocal.negative) begin
-                        /* Turn result negative again */
-                        raw_result = -raw_result;
-                    end
-
                     shift_count = (command_reg == CALC_SLOPE ? SLOPE_RECIP_SHIFT : GRAD_RECIP_SHIFT) - int'($signed(active_reciprocal.exponent));
                     output_width = 32;
                 end
 
-                CALC_EDGE_INIT: begin 
-                    shift_count = FINAL_SHIFT; 
-                    output_width = 24; 
+                CALC_EDGE_INIT: begin
+                    shift_count = FINAL_SHIFT;
+                    output_width = 24;
                 end
 
-                CALC_ATTR_REF: begin 
-                    shift_count = FINAL_SHIFT; 
-                    output_width = 44; 
+                CALC_ATTR_REF: begin
+                    shift_count = FINAL_SHIFT;
+                    output_width = 44;
                 end
             endcase
         end else if (instruction.op == SUB & instruction.src_b == SRC_X0) begin
@@ -508,6 +490,11 @@ module triangle_math_unit #(
 //====================================================================================
 //      ROUNDING
 //====================================================================================
+
+    /* For right shifts, arithmetic shift rounds toward negative infinity. The
+     * guard bit is the first discarded bit; sticky ORs together all lower bits.
+     * Incrementing for guard && (sticky || retained_lsb) implements nearest,
+     * ties-to-even for positive and negative two's-complement values. */
 
     always_comb begin
         /* Default Values */
@@ -527,28 +514,49 @@ module triangle_math_unit #(
                     end
                 end
             end else begin
+                /* A shift of 88 or more is below half an output LSB for any
+                 * signed 88-bit input, so nearest rounding produces zero. */
                 scaled_result = '0;
             end
         end else if (shift_count < 0) begin
             if (-shift_count >= 88) begin
+                /* Do not let a wide left shift silently discard significant
+                   bits. Any nonzero input is outside the 88-bit accumulator. */
                 conversion_error = raw_result != 0;
                 scaled_result = '0;
             end else begin
                 scaled_result = raw_result <<< (-shift_count);
+                /* Reverse the shift to detect sign or magnitude bits lost at
+                 * the accumulator boundary before checking the output format. */
                 conversion_error = (scaled_result >>> (-shift_count)) != raw_result;
             end
         end
 
-        if (conversion_error | rounded_result[88] != rounded_result[87] | !fits(write_data, output_width)) begin
-            write_status = STATUS_OVERFLOW;
-        end
-
-        if (command_reg == CALC_SLOPE & micro_pc == 0 & write_data < 0) begin
-            write_status = STATUS_OVERFLOW;
-        end
     end
 
-    assign rounded_result = {scaled_result[87], scaled_result} + 89'(guard_bit & (sticky_bit | scaled_result[0]));
+        always_comb begin
+            write_status = STATUS_OK;
+            
+            if ((instruction.op == ADD || instruction.op == SUB) && add_result[88] != add_result[87]) begin
+                write_status = STATUS_OVERFLOW;
+            end
+
+            if (instruction.op == RECIP && recip_div_zero) begin
+                write_status = STATUS_DIV_ZERO;
+            end
+
+            if (conversion_error || rounded_result[88] != rounded_result[87] || !fits(write_data, output_width)) begin
+                write_status = STATUS_OVERFLOW;
+            end
+
+            if (command_reg == CALC_SLOPE && micro_pc == 0 && write_data < 0) begin
+                write_status = STATUS_OVERFLOW;
+            end
+        end
+
+    /* Round up when discarded bits are above half, or exactly half with an
+     * odd retained result. This also selects the even value on negative ties. */
+    assign rounded_result = {scaled_result[87], scaled_result} + ((guard_bit && (sticky_bit || scaled_result[0])) ? 89'd1 : 89'd0);
     assign write_data = rounded_result[87:0];
 
 
