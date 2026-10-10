@@ -21,8 +21,8 @@ module clip_tester (
     /* If code bit is 0 then vertex is inside that plane
      * If code bit is 1 then vertex is outside that plane */
 
-    /* Left plane test */
-    assign clip_code_o[0] = x < -w;
+    /* Left plane test (x < -w) */
+    assign clip_code_o[0] = x + w < 0;
 
     /* Right plane test */
     assign clip_code_o[1] = x > w;
@@ -30,8 +30,8 @@ module clip_tester (
     /* Upper plane test */
     assign clip_code_o[2] = y > w;
 
-    /* Lower plane test */
-    assign clip_code_o[3] = y < -w;
+    /* Lower plane test (y < -w) */
+    assign clip_code_o[3] = y + w < 0;
 
     /* Far plane test */
     assign clip_code_o[4] = z > w;
