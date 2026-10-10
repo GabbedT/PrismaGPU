@@ -24,10 +24,15 @@ Mapping to the screen
 ---------------------
 
 The stage offsets normalized x and reverses normalized y, then scales each
-by half the corresponding screen dimension. Results are stored in 24-bit
-Q16.8, giving a resolution of 1/256 pixel. Conversion rounds to nearest,
-with halfway cases toward the greater value. Values are not saturated and
-overflow is not reported.
+by half the corresponding screen dimension. Coordinates are stored in signed
+19-bit X and 18-bit Y, both with eight fractional bits. Conversion rounds to
+nearest, with halfway cases toward the greater value. The viewport requires
+positive dimensions no larger than 640×480. Before narrowing, it rejects X/Y
+outside ±65792 raw F16 units and Z outside [0,65792] raw F16 units. The
+unsigned Z comparison also rejects negative signed representations. Small
+reciprocal-LUT overshoot and off-screen X/Y within those limits are retained.
+The viewport does not clamp out-of-range coordinates; it discards the complete
+triangle using the existing perspective error indication.
 
 Ideally, normalized (0,0) maps to (W/2,H/2), (−1,+1) maps to (0,0), and
 (+1,−1) maps to (W,H). The endpoint is W or H rather than W−1 or H−1;
@@ -35,18 +40,14 @@ pixel coverage and border rules belong to the later renderer. Approximate
 perspective division can make actual coordinates differ slightly from these
 ideal values.
 
-The culler interprets screen x and y as signed 24-bit coordinates. Keep
-screen dimensions and results within that signed Q16.8 range. The dimension
-registers themselves do not enforce this limit.
+The culler consumes the signed coordinates after viewport range validation.
 
 Depth and other attributes
 --------------------------
 
-Depth z keeps 16 fractional bits and is stored in a 24-bit Q8.16 field.
-It is the normalized z/w from perspective division, with no viewport depth
-rescaling. For example, depth 1 is encoded as ``0x010000``. The different
-fractional widths matter when decoding the output: x and y use eight
-fractional bits, but z uses sixteen.
+Depth z is unsigned 17-bit Q1.16, with no viewport depth rescaling. Its range
+validation and rejection behavior are described above. X and Y use eight
+fractional bits; Z uses sixteen.
 
 The encoded reciprocal of w passes through unchanged. Texture coordinates
 remain 32-bit u/w and v/w values, and color remains four 4-bit channels.

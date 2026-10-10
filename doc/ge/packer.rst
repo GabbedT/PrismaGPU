@@ -1,21 +1,18 @@
 Packer and output
 =================
 
-The packer receives processed triangles and serializes each into five
-128-bit words. The transfer size remains 80 bytes per triangle, but the
-contents change: screen coordinates are narrower, and w is replaced by
-its encoded reciprocal. Each triangle also carries its signed doubled
-screen area for downstream rasterization. Use the processed format when
-decoding output.
+The packer receives processed triangles and serializes each into four 128-bit words.
+Each transfer is 64 bytes. Screen coordinates are signed, and w is replaced
+by its encoded reciprocal. Each triangle carries its signed doubled screen
+area for downstream rasterization.
 
 Direct raster output
 --------------------
 
 With ``GE_CTRL.raster_forward=1``, surviving triangles are sent directly
-from the culling output to ``raster_triangle_o``, a 600-bit ``proc_triangle_t``
+from the culling output to ``raster_triangle_o``, a 512-bit ``proc_triangle_t``
 containing all three processed vertices and the signed doubled screen area.
-It has the same useful bits as the packed format below, without the 40 padding
-bits or five-word serialization.
+It has the same bits as the packed format below, without word serialization.
 
 The raster engine accepts a complete triangle on each rising clock edge
 where ``raster_valid_o=1``. There is no ready or stall input from the raster
@@ -69,18 +66,16 @@ the output queue, so a zero count does not guarantee that the packer is empty.
 Processed binary format
 -----------------------
 
-A processed triangle contains 600 useful bits: 549 vertex bits and 51
-signed area bits. Adding 40 high zero bits forms its 640-bit transfer, sent
-as five words from least to most significant.
-In the complete transfer P:
+A processed triangle contains exactly 512 bits: three 158-bit vertices and
+a signed 38-bit area. It is sent as four words from least to most significant,
+with no padding. In the complete transfer P:
 
-* the first vertex occupies bits 182:0;
-* the second occupies bits 365:183;
-* the third occupies bits 548:366;
-* bits 599:549 contain the signed doubled screen area;
-* bits 639:600 are zero padding.
+* vertex A occupies bits 157:0;
+* vertex B occupies bits 315:158;
+* vertex C occupies bits 473:316;
+* bits 511:474 contain the signed doubled screen area.
 
-The area is a 51-bit two's complement value with 16 fractional bits. It
+The area is a 38-bit two's complement value with 16 fractional bits. It
 is the determinant computed from the transmitted screen x and y coordinates,
 without rounding or taking its absolute value. Dividing the stored integer
 by :math:`2^{16}` gives twice the signed geometric area in square pixels. See
@@ -107,33 +102,30 @@ by :math:`2^{16}` gives twice the signed geometric area in square pixels. See
      - Unsigned red.
    * - 47:16
      - v
-     - v/w in Q16.16.
+     - Signed 32-bit v/w, F16.
    * - 79:48
      - u
-     - u/w in Q16.16.
+     - Signed 32-bit u/w, F16.
    * - 85:80
      - w.exponent
      - Signed 6-bit exponent.
-   * - 110:86
+   * - 103:86
      - w.mantissa
-     - Unsigned Q1.24 mantissa.
-   * - 134:111
+     - Unsigned 18-bit Q1.17 mantissa.
+   * - 120:104
      - z
-     - Low 24 bits of z/w; see :doc:`viewport`.
-   * - 158:135
+     - Unsigned 17-bit Q1.16 z/w.
+   * - 138:121
      - y
-     - Screen coordinate in Q16.8.
-   * - 182:159
+     - Signed 18-bit screen coordinate, F8.
+   * - 157:139
      - x
-     - Screen coordinate in Q16.8.
+     - Signed 19-bit screen coordinate, F8.
 
 From most to least significant, a processed vertex contains x, y, z,
 reciprocal mantissa, reciprocal exponent, u/w, v/w, r, g, b, and a. Its
-width is 183 bits: 103 position bits, 64 texture bits, and 16 color bits.
-The fifth output word contains the final 37 vertex bits in positions 36:0,
-the complete 51-bit area in positions 87:37, and zeros in positions 127:88.
-The area occupies formerly unused padding; vertex offsets and the five-word
-transfer size are unchanged.
+width is 158 bits. The area follows the three vertices directly; the complete
+512-bit record has no padding.
 
 Reading output
 --------------

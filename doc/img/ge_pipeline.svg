@@ -37,7 +37,7 @@
 <text x="295" y="231" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">128 bits</text>
 <rect x="405" y="280" width="160" height="65" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
 <text x="485" y="307" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Raster engine</text>
-<text x="485" y="329" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">600 bits + valid</text>
+<text x="485" y="329" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">512 bits + valid</text>
 <text x="485" y="160" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#334155">raster_forward = 0</text>
 <path d="M 580 215 L 580 312 L 565 312" fill="none" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
 <text x="595" y="300" font-family="sans-serif" font-size="13" fill="#334155">raster_forward = 1</text>

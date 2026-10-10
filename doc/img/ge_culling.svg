@@ -25,5 +25,5 @@
 <path d="M 565 70 L 595 70" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
 <path d="M 755 70 L 785 70" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
 <path d="M 945 70 L 975 70" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
-<text x="25" y="200" font-family="sans-serif" font-size="14" fill="#334155">D &gt; 0: CW; D &lt; 0: CCW. Zero area discarded. Passing triangles carry signed D: 51 bits, 16 fractional.</text>
+<text x="25" y="200" font-family="sans-serif" font-size="14" fill="#334155">D &gt; 0: CW; D &lt; 0: CCW. Zero area discarded. Passing triangles carry signed D: 38 bits, 16 fractional.</text>
 </svg>

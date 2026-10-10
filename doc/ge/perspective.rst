@@ -22,19 +22,20 @@ Instead of dividing each attribute independently, the stage approximates
 positive w into a mantissa between 1 and 2 and a power-of-two exponent.
 Normalization lets a fixed-size lookup table cover a wide range of w values.
 
-The table has 1024 entries containing 25-bit Q1.24 reciprocal mantissas.
-The selected entry is used directly, without interpolation or a refinement
-step. The result is therefore approximate, including for some simple values
-such as w=1. This precision carries through to normalized positions and
-texture coordinates.
+The table has 1024 entries. Each reciprocal sample is rounded from the
+previous Q1.24 table value to an unsigned Q1.17 mantissa using round-half-up.
+The selected midpoint entry is used directly, without interpolation or a
+refinement step. The result is approximate, including for some simple values
+such as w=1. This rounded mantissa also drives all five products.
 
-The five products are returned as signed Q16.16 values, with truncation and
-no saturation. The reciprocal is retained separately as a 25-bit unsigned
-mantissa and a 6-bit signed exponent:
+The five products are returned as signed 32-bit Q16.16 values, with truncation
+and no saturation. U/w and v/w retain the full 32-bit result range. The
+reciprocal is retained as an unsigned 18-bit
+Q1.17 mantissa and a signed 6-bit exponent:
 
 .. math::
 
-   1/w \approx (\mathrm{mantissa}/2^{24}) \times 2^{\mathrm{exponent}}
+   1/w \approx (\mathrm{mantissa}/2^{17}) \times 2^{\mathrm{exponent}}
 
 The output vertex carries this reciprocal in place of the original w.
 A later renderer can interpolate u/w, v/w, and 1/w, then recover texture

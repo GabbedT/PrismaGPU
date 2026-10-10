@@ -1,10 +1,10 @@
 Input stage and unpacker
 ========================
 
-The input stage turns 128-bit words into 208-bit vertices. An input FIFO
+The input stage turns four 128-bit words into three 170-bit vertices. An input FIFO
 absorbs short differences in timing between the memory unit and the geometry
 pipeline. The unpacker then joins the fields that cross word boundaries,
-producing three vertices from every five words.
+producing three vertices from every four words.
 
 .. figure:: ../img/ge_input.svg
    :alt: Input word queue, current word, and vertex assembly
@@ -17,10 +17,9 @@ producing three vertices from every five words.
 Why unpacking is needed
 -----------------------
 
-A vertex occupies 208 bits, so it does not fit into one 128-bit word.
-The transfer format packs vertices together without aligning each one to
-a word boundary. This keeps a complete triangle to five words, with only
-16 padding bits. The exact field positions are given in :doc:`overview`.
+A vertex occupies 170 bits. Three vertices use 510 bits, which fit in
+four 128-bit words (512 bits) with two high padding bits. Vertices are
+packed consecutively without word alignment. The exact field positions are given in :doc:`overview`.
 
 .. list-table:: Reconstructing one triangle
    :header-rows: 1
@@ -30,23 +29,20 @@ a word boundary. This keeps a complete triangle to five words, with only
      - Use
      - Vertex completed
    * - First
-     - Store the first 128 bits of the first vertex.
+     - Store the first 128 bits of vertex A.
      - None.
    * - Second
-     - Complete the first vertex and retain 48 bits of the second.
-     - First.
+     - Complete A and retain 86 bits of B.
+     - A.
    * - Third
-     - Add another 128 bits to the second vertex.
-     - None.
+     - Complete B and retain 44 bits of C.
+     - B.
    * - Fourth
-     - Complete the second vertex and retain 96 bits of the third.
-     - Second.
-   * - Fifth
-     - Complete the third vertex and discard the 16 padding bits.
-     - Third.
+     - Complete C and ignore the two high padding bits.
+     - C.
 
 With words continuously available and no downstream pauses, three vertices
-are produced per five word-consumption cycles, after the initial queue
+are produced per four word-consumption cycles, after the initial queue
 read. Vertices keep their original order throughout the engine.
 
 Buffering and pauses

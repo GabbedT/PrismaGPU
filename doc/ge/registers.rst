@@ -375,8 +375,10 @@ Viewport registers
 
 ``GE_VP_WIDTH[31:0]`` and ``GE_VP_HEIGHT[31:0]`` are unsigned integer pixel
 dimensions, writable by byte. They contain no fractions, origin, or scissor
-limits. Hardware reset clears them; soft reset preserves them. Hardware
-does not reject zero or values too large for the output coordinates.
+limits. Hardware reset clears them; soft reset preserves them. Register writes
+accept the complete 32-bit value. During processing, the viewport rejects zero,
+widths above 640, or heights above 480 and discards the affected triangle with
+the existing perspective error indication.
 See :doc:`viewport` for conversion and the current z format.
 
 Performance counters

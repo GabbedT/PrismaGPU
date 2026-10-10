@@ -4,7 +4,7 @@
 <rect width="1180" height="350" rx="14" fill="#f8fafc"/>
 <rect x="25" y="25" width="160" height="90" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
 <text x="105" y="61" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Triangle</text>
-<text x="105" y="86" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">600 bits incl. area</text>
+<text x="105" y="86" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">512 bits incl. area</text>
 <rect x="215" y="25" width="160" height="90" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
 <text x="295" y="61" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Triangle FIFO</text>
 <text x="295" y="86" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">2 triangles</text>
@@ -12,8 +12,8 @@
 <text x="485" y="61" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Current triangle</text>
 <text x="485" y="86" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">register</text>
 <rect x="595" y="25" width="160" height="90" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
-<text x="675" y="61" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">5-word sequence</text>
-<text x="675" y="86" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">40 padding bits</text>
+<text x="675" y="61" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">4-word record</text>
+<text x="675" y="86" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">no padding (512 bits)</text>
 <rect x="785" y="25" width="160" height="90" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
 <text x="865" y="61" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Word FIFO</text>
 <text x="865" y="86" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">128 bits</text>
@@ -29,7 +29,7 @@
 <path d="M 200 70 L 200 205 L 215 205" fill="none" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
 <rect x="215" y="160" width="350" height="90" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
 <text x="390" y="196" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Raster engine</text>
-<text x="390" y="221" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">600-bit triangle + valid (no ready)</text>
+<text x="390" y="221" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">512-bit triangle + valid (no ready)</text>
 <text x="590" y="210" font-family="sans-serif" font-size="14" fill="#334155">raster_forward = 1: bypass packer and DDR output</text>
 <text x="25" y="315" font-family="sans-serif" font-size="14" fill="#334155">Memory mode: low bits first; full queues apply backpressure. Raster mode: accept every valid triangle.</text>
 </svg>

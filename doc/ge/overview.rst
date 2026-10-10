@@ -47,8 +47,8 @@ a division error, this buffer removes the whole group so that incomplete
 triangles cannot reach the output.
 
 The culler evaluates orientation in screen coordinates. Surviving triangles
-enter the packer, which produces five output words for each triangle, or
-go directly to the raster engine when ``GE_CTRL.raster_forward=1``.
+enter the packer, which produces four output words (64 bytes) per triangle,
+or go directly to the raster engine when ``GE_CTRL.raster_forward=1``.
 
 Buffers let adjacent stages work at different rates. When a downstream
 stage cannot accept more data, it holds up the stages that feed it. This
@@ -67,7 +67,7 @@ through the GE registers for that unit to use. Address traversal, range
 checking, and the convention for inclusive or exclusive end addresses belong
 to the system's memory integration.
 
-Direct raster mode adds a valid signal and a 600-bit processed triangle
+Direct raster mode adds a valid signal and a 512-bit processed triangle
 output. It avoids packing and DDR writes for newly processed triangles.
 There is no ready input: the raster engine must accept every valid transfer.
 The packer's backpressure is ignored in this mode. Input memory transfers
@@ -83,17 +83,18 @@ already being assembled or processed elsewhere in the engine.
 Numeric formats
 ---------------
 
-Positions before the viewport use signed Q16.16: a 32-bit two's-complement
-integer divided by 65536. For example, ``0x00010000`` represents 1 and
-``0xFFFF0000`` represents −1. Matrix coefficients and texture coordinates
-use the same signed format. The homogeneous coordinate w allows a single
-matrix to express transformations including perspective projection; a
-Cartesian point normally enters with w=1.
+Input x/y/z/w use S(25,16), with range [-256,256); u/v use S(27,16),
+with range [-1024,1024). RGBA uses four unsigned 4-bit
+channels. Each input vertex is 170 bits. Three vertices occupy 510 bits in a
+512-bit (four-word, 64-byte) record with two high padding bits.
 
-Color has four unsigned 4-bit channels, each ranging from 0 to 15. There
-is no color-space conversion. Calculations have finite precision and do
-not saturate automatically: out-of-range results can lose their high bits.
-Choose transformations and screen dimensions that keep results representable.
+The matrix multiplies each signed 25-bit F16 input by a signed 32-bit F16
+coefficient, forms 57-bit products and 59-bit four-term sums, then emits a
+signed 32-bit F16 result. The wider result range supports transformed values
+outside the packed input range without extra input quantization. Matrix and
+viewport registers remain 32-bit and accept unrestricted writes. Software must
+validate values before packing: hardware cannot detect overflow after a value
+has already been narrowed into the wire fields.
 
 .. list-table:: Data carried through the engine
    :header-rows: 1
@@ -102,52 +103,49 @@ Choose transformations and screen dimensions that keep results representable.
    * - Data
      - Bits
      - Contents
-   * - Input position
-     - 128
-     - Four Q16.16 coordinates: x, y, z, w.
-   * - Texture coordinates
-     - 64
-     - Q16.16 u and v.
+   * - Input XYZW
+     - 100
+     - Four signed 25-bit values, F16.
+   * - Input UV
+     - 54
+     - Two signed 27-bit values, F16.
    * - Color
      - 16
-     - Four 4-bit RGBA components.
+     - Four unsigned 4-bit RGBA components.
    * - Input vertex
-     - 208
-     - Position, texture coordinates, and color.
-   * - Input triangle
-     - 624
-     - Three input vertices.
+     - 170
+     - XYZW, UV, and color.
+   * - Input record
+     - 512
+     - Three vertices (510 bits) and two high padding bits.
    * - Reciprocal of w
-     - 31
-     - Unsigned 25-bit Q1.24 mantissa and signed 6-bit exponent.
-   * - Processed position
-     - 103
-     - 24-bit x, y, z and the 31-bit reciprocal of w.
+     - 24
+     - Unsigned 18-bit Q1.17 mantissa and signed 6-bit exponent.
    * - Processed vertex
-     - 183
-     - Processed position, texture coordinates, and color.
+     - 158
+     - Color 16, UV 64, reciprocal 24, Z 17, Y 18, X 19.
    * - Processed triangle
-     - 600
-     - Three processed vertices (549 bits) and signed doubled screen area (51 bits).
+     - 512
+     - Three vertices (474 bits) and signed doubled area (38 bits).
 
-The reciprocal represents ``(mantissa / 2^24) × 2^exponent``. After
-perspective division, it replaces the original w coordinate. Output x and
-y are Q16.8, while output depth z is Q8.16; see :doc:`viewport`.
-The triangle's area has 16 fractional bits and is computed from these final
-screen x and y coordinates; see :doc:`culling` and :doc:`packer`.
+Input and output records are each four 128-bit words (64 bytes). The input
+record has two high padding bits. The output record has no padding: three
+158-bit vertices are followed by the signed 38-bit doubled screen area. See
+:doc:`packer` for its field layout.
 
 Input triangle format
 ---------------------
 
-A triangle occupies five 128-bit words, or 80 bytes. The 624 useful bits
-are followed by 16 padding bits at the high end of the last word. There
-are no headers, indices, or end markers; boundaries are determined by
-counting groups of five words.
-
-Let T be the complete 640-bit transfer. Send bits 127:0 first, followed by
-255:128, 383:256, 511:384, and 639:512. The first vertex occupies bits 207:0,
-the second occupies 415:208, and the third occupies 623:416. The system's
-memory interface defines how word lanes correspond to bytes in memory.
+The packed input and output ABI has changed: the former five-word, 80-byte
+records are incompatible with the current four-word, 64-byte records. Update
+both producer and consumer; do not read legacy records using this layout. An
+input triangle occupies four 128-bit words, or 64 bytes. Bits 509:0 hold
+the three consecutive 170-bit vertices; bits 511:510 are padding. Send bits
+127:0 first, followed by 255:128, 383:256, and 511:384. Vertex A occupies
+bits 169:0, B bits 339:170, and C bits 509:340. Packed values must be checked
+against their signed destination ranges before narrowing; out-of-range values
+must be rejected instead of wrapped. The memory interface defines how word
+lanes correspond to bytes.
 
 .. list-table:: Input vertex fields, relative to the vertex's least significant bit
    :header-rows: 1
@@ -168,28 +166,28 @@ memory interface defines how word lanes correspond to bytes in memory.
    * - 15:12
      - r
      - Unsigned red.
-   * - 47:16
+   * - 42:16
      - v
-     - Q16.16 texture coordinate.
-   * - 79:48
+     - Signed S(27,16) texture coordinate.
+   * - 69:43
      - u
-     - Q16.16 texture coordinate.
-   * - 111:80
+     - Signed S(27,16) texture coordinate.
+   * - 94:70
      - w
-     - Q16.16 homogeneous coordinate.
-   * - 143:112
+     - Signed S(25,16) homogeneous coordinate.
+   * - 119:95
      - z
-     - Q16.16 coordinate.
-   * - 175:144
+     - Signed S(25,16) coordinate.
+   * - 144:120
      - y
-     - Q16.16 coordinate.
-   * - 207:176
+     - Signed S(25,16) coordinate.
+   * - 169:145
      - x
-     - Q16.16 coordinate.
+     - Signed S(25,16) coordinate.
 
 From most to least significant, a vertex contains x, y, z, w, u, v, r,
-g, b, and a. Input padding is ignored. The output format is described in
-:doc:`packer`.
+g, b, and a. Input record padding is ignored. The output format is described
+in :doc:`packer`.
 
 Starting, pausing, and finishing work
 -------------------------------------

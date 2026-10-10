@@ -22,8 +22,9 @@ and color pass unchanged.
 Four coordinates in parallel
 ----------------------------
 
-Each output coordinate is a dot product: four input coordinates are
-multiplied by the corresponding matrix row, then the products are added.
+Each output coordinate is a dot product: four signed 25-bit F16 input
+coordinates are multiplied by signed 32-bit F16 coefficients, then the
+products are added. Products are 57 bits wide; the four-term sum is 59 bits.
 All four rows operate in parallel. The transformed vertex is captured by
 the following triangle buffer rather than moving through a sequence of
 four coordinate calculations.
@@ -34,10 +35,12 @@ matrix has ``0x00010000`` on the diagonal and zero elsewhere. A matrix can
 combine model, view, and projection transforms if software calculates the
 combined coefficients first.
 
-The arithmetic retains a 32-bit Q16.16 result for each coordinate. Extra
-fractional precision from multiplication is truncated rather than rounded
-to nearest. Results are not saturated, so software must keep transformed
-positions within the supported range.
+The arithmetic retains a signed 32-bit F16 result for each coordinate, so
+transformed values can exceed the packed input range of [-256,256) without
+additional input quantization. Product fractional bits are truncated rather
+than rounded to nearest. Results are not saturated; software must keep them
+within the matrix output range and the later pipeline stages must validate
+values before narrowing them.
 
 Assembling a triangle
 ---------------------

@@ -35,7 +35,7 @@ so downstream rasterization can compute its reciprocal without repeating
 the determinant calculation. The area and vertices stay aligned when the
 pipeline pauses; no extra pipeline stage is needed.
 
-The stored area is signed, 51 bits wide, and has 16 fractional bits because
+The stored area is signed, 38 bits wide, and has 16 fractional bits because
 screen x and y each have 8 fractional bits. For the stored integer d,
 :math:`D = d / 2^{16}` in square pixels. The value is twice the signed geometric
 area, which is also the denominator used to normalize matching edge
