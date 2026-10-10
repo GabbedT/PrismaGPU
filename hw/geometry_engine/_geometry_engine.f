@@ -17,6 +17,7 @@ clip_engine/clip_engine.sv
 
 perspective_divide/reciprocal_lut.sv
 perspective_divide/reciprocal_divider.sv
+perspective_divide/perspective_product.sv
 perspective_divide/perspective_divider.sv
 
 viewport_transform/viewport_transform.sv
