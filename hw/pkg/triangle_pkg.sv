@@ -56,6 +56,8 @@ package triangle_pkg;
 
     /* Post process triangle */
     typedef struct packed {
+        /* Twice signed screen area, with 16 fractional bits; set by culling. */
+        logic signed [50:0] area;
         proc_vertex_t [2:0] vtx;
     } proc_triangle_t;
 

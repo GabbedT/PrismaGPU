@@ -29,6 +29,7 @@ module cull_engine (
 
     /* Multiplications */
     logic signed [49:0] mul_1, mul_1_ff, mul_2, mul_2_ff;
+    proc_vertex_t [2:0] vertices_ff;
 
 
     assign sub_xba = $signed(triangle_i.vtx[1].pos.x) - $signed(triangle_i.vtx[0].pos.x);
@@ -48,7 +49,7 @@ module cull_engine (
                 mul_1_ff <= mul_1;
                 mul_2_ff <= mul_2;
 
-                triangle_o <= triangle_i;
+                vertices_ff <= triangle_i.vtx;
             end
         end
 
@@ -71,6 +72,9 @@ module cull_engine (
     logic signed [50:0] triangle_area;
 
     assign triangle_area = mul_1_ff - mul_2_ff;
+
+    /* The registered products and vertices belong to the same triangle. */
+    assign triangle_o = '{area: triangle_area, vtx: vertices_ff};
 
 
     logic zero_area, ccw, cw;

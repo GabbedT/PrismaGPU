@@ -108,7 +108,7 @@ module triangle_packer #(
     logic [127:0] write_data;
     logic write_enable, read_enable;
 
-    /* Low bits first; the final 79 bits are padding for the current type */
+    /* Low bits first: 549 vertex bits, 51 signed area bits, 40 zero padding bits. */
     assign packed_triangle = {{(640 - $bits(proc_triangle_t)){1'b0}}, triangle_data};
 
         always_ff @(posedge clk_i) begin
