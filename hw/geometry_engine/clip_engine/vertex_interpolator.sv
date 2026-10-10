@@ -130,26 +130,36 @@ module vertex_interpolator (
     logic signed [31:0] interpolated_position; logic [3:0] interpolated_color;
     logic round_position;
 
-    logic signed [32:0] position_delta;
+    logic signed [32:0] position_delta, position_delta_ff;
     logic signed [50:0] position_product, position_product_ff;
-    logic signed [31:0] start_position_ff;
-    logic round_position_ff;
+    logic signed [31:0] start_position_delta_ff, start_position_ff;
+    logic round_position_delta_ff, round_position_ff;
     logic [31:0] position_integral;
     logic integer_lsb, round_up, carry_in;
 
-    /* First stage: subtract and multiply, retaining the matching start value. */
+    /* First stage: subtract, retaining the matching start value and rounding. */
     assign position_delta = {nxt_pos[31], nxt_pos} - {crt_pos[31], crt_pos};
-    assign position_product = position_delta * $signed({1'b0, t});
+
+    always_ff @(posedge clk_i) begin
+        if (!stall_i) begin
+            position_delta_ff <= position_delta;
+            start_position_delta_ff <= crt_pos;
+            round_position_delta_ff <= round_position;
+        end
+    end
+
+    /* Second stage: multiply the registered delta; t is stable for the vertex. */
+    assign position_product = position_delta_ff * $signed({1'b0, t});
 
     always_ff @(posedge clk_i) begin
         if (!stall_i) begin
             position_product_ff <= position_product;
-            start_position_ff <= crt_pos;
-            round_position_ff <= round_position;
+            start_position_ff <= start_position_delta_ff;
+            round_position_ff <= round_position_delta_ff;
         end
     end
 
-    /* Second stage: tie parity belongs to the sum, not just the product. */
+    /* Final stage: tie parity belongs to the sum, not just the product. */
     assign integer_lsb = start_position_ff[0] ^ position_product_ff[16];
     assign round_up = round_position_ff & position_product_ff[15] & ((|position_product_ff[14:0]) | integer_lsb);
 
@@ -228,8 +238,6 @@ module vertex_interpolator (
                     crt_pos = crt_vertex_i.pos.y;
                     nxt_pos = nxt_vertex_i.pos.y;
 
-                    new_vertex_NXT.pos.x = interpolated_position;
-
                     state_NXT = INTP_Z;
                 end
 
@@ -237,7 +245,9 @@ module vertex_interpolator (
                     crt_pos = crt_vertex_i.pos.z;
                     nxt_pos = nxt_vertex_i.pos.z;
 
-                    new_vertex_NXT.pos.y = interpolated_position;
+                    /* Due to the two stages for interpolation, FSM 
+                     * register the result two clock cycles later */
+                    new_vertex_NXT.pos.x = interpolated_position;
 
                     state_NXT = INTP_W;
                 end
@@ -246,7 +256,7 @@ module vertex_interpolator (
                     crt_pos = crt_vertex_i.pos.w;
                     nxt_pos = nxt_vertex_i.pos.w;
 
-                    new_vertex_NXT.pos.z = interpolated_position;
+                    new_vertex_NXT.pos.y = interpolated_position;
 
                     state_NXT = INTP_U;
                 end
@@ -255,7 +265,7 @@ module vertex_interpolator (
                     crt_pos = crt_vertex_i.tex.u;
                     nxt_pos = nxt_vertex_i.tex.u;
 
-                    new_vertex_NXT.pos.w = interpolated_position;
+                    new_vertex_NXT.pos.z = interpolated_position;
 
                     state_NXT = INTP_V;
                 end
@@ -264,7 +274,17 @@ module vertex_interpolator (
                     crt_pos = crt_vertex_i.tex.v;
                     nxt_pos = nxt_vertex_i.tex.v;
 
+                    new_vertex_NXT.pos.w = interpolated_position;
+
+                    state_NXT = INTP_R;
+                end
+
+                INTP_R: begin
+                    crt_col = crt_vertex_i.col.r;
+                    nxt_col = nxt_vertex_i.col.r;
+
                     new_vertex_NXT.tex.u = interpolated_position;
+                    new_vertex_NXT.col.r = interpolated_color;
 
                     /* Snap from registered w, in parallel with texture interpolation. */
                     case (plane_i)
@@ -281,16 +301,6 @@ module vertex_interpolator (
                         NEAR_PLANE: new_vertex_NXT.pos.z = '0;
                     endcase
 
-                    state_NXT = INTP_R;
-                end
-
-                INTP_R: begin
-                    crt_col = crt_vertex_i.col.r;
-                    nxt_col = nxt_vertex_i.col.r;
-
-                    new_vertex_NXT.tex.v = interpolated_position;
-                    new_vertex_NXT.col.r = interpolated_color;
-
                     state_NXT = INTP_G;
                 end
 
@@ -298,6 +308,7 @@ module vertex_interpolator (
                     crt_col = crt_vertex_i.col.g;
                     nxt_col = nxt_vertex_i.col.g;
 
+                    new_vertex_NXT.tex.v = interpolated_position;
                     new_vertex_NXT.col.g = interpolated_color;
 
                     state_NXT = INTP_B;
