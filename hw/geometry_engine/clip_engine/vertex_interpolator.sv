@@ -206,8 +206,6 @@ module vertex_interpolator (
             crt_col = '0;
             nxt_col = '0;
 
-            round_position = 1'b0;
-
             /* To save multipliers we use just two of them (one for xyzw and uv and one for rgba),
              * then interpolate each coordinate sequentially instead of in parallel */
             case (state_CRT)
@@ -223,8 +221,6 @@ module vertex_interpolator (
 
                     new_vertex_NXT.pos.x = interpolated_position;
 
-                    round_position = 1'b1;
-
                     state_NXT = INTP_Y;
                 end
 
@@ -233,8 +229,6 @@ module vertex_interpolator (
                     nxt_pos = nxt_vertex_i.pos.y;
 
                     new_vertex_NXT.pos.y = interpolated_position;
-
-                    round_position = 1'b1;
 
                     state_NXT = INTP_Z;
                 end
@@ -245,8 +239,6 @@ module vertex_interpolator (
 
                     new_vertex_NXT.pos.z = interpolated_position;
 
-                    round_position = 1'b1;
-
                     state_NXT = INTP_W;
                 end
 
@@ -255,8 +247,6 @@ module vertex_interpolator (
                     nxt_pos = nxt_vertex_i.pos.w;
 
                     new_vertex_NXT.pos.w = interpolated_position;
-
-                    round_position = 1'b1;
 
                     state_NXT = INTP_U;
                 end
