@@ -40,10 +40,10 @@ enum test_id {
     TEST_OUTPUT_COUNTS
 };
 
-/* Packed SV records: 3*208 input bits, 3*183 + 51 area output bits, padded to 640.
- * proc_vertex_t is 103 position + 64 UV + 16 RGBA = 183 bits. */
+/* Four 128-bit words: 3*170 input bits plus 2 padding bits;
+ * output is 3*158 vertex bits plus 38 signed area bits, without padding. */
 enum {
-    GE_STRIDE = 80,
+    GE_STRIDE = 64,
     GE_MAX_OUTPUT = 7,
     GE_GPU_SIZE = 65536,
     GE_INPUT = 0x1000,

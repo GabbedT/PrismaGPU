@@ -178,7 +178,7 @@ The testbench bridge maps firmware RAM to `0x10000000`, GE registers to `0x40000
 | `identity`, `inside`, `ccw` | Base triangle inside the frustum, identity matrix, and unclipped path. |
 | `cw` | Base triangle with the first two vertices reversed. |
 | `zero_area`, `collinear` | Aligned vertices and rejection of a degenerate triangle. |
-| `viewport` | 801×603 viewport to exercise odd dimensions and rounding. |
+| `viewport` | Odd viewport dimensions within the supported 640×480 maximum. |
 | `clip_left`, `clip_right`, `clip_top`, `clip_bottom`, `clip_far`, `clip_near` | Six plane-specific cases, with one or two vertices outside and varying vertex indices. |
 | `multi_plane`, `outside` | Clipping against multiple planes and rejection of a triangle entirely outside. |
 | `on_plane`, `near_plane` | A vertex exactly on a plane, then offsets from −2 to +2 Q16.16 LSBs around all six planes. |
@@ -207,7 +207,7 @@ The reference starts from the packed input bytes, decodes them, then models matr
 
 The floating-point model checks numeric values, while the quantized fixed-point model determines the exact output count. Boundary categories (`on_plane` through `near_zero`) and cases where the floating-point and fixed-point models disagree also use fixed-point output values. Tolerances account for the reciprocal lookup table and color interpolation; they are intended for this generator's input domain, not as universal GE error bounds.
 
-Input and output records each occupy **80 bytes**: three 208-bit input vertices or three 183-bit output vertices followed by a signed 51-bit doubled screen area, with no padding between vertices. Output bits 599:549 hold the area, with 16 fractional bits; bits 639:600 are zero padding. Input tail padding is deliberately nonzero. Every output area is checked exactly against the determinant of its decoded Q16.8 vertices, and output padding must be zero. Timing fingerprints include the area. Input position/UV values use Q16.16. Output XY uses Q16.8, Z retains 16 fractional bits, UV uses Q16.16, and reciprocal W has a Q1.24 mantissa and signed exponent representation.
+Input and output records each occupy **64 bytes** (four 128-bit words). Input packs three 170-bit vertices into bits 509:0 and has two high padding bits. Output packs three 158-bit vertices into bits 473:0 and the signed 38-bit doubled screen area into bits 511:474, with no padding. The area is checked exactly against the determinant of decoded Q16.8 vertices. Input XYZW is signed 25-bit F16; UV is signed 27-bit F16. Output XY is signed 19/18-bit F8, Z is unsigned 17-bit F16, UV is signed 32-bit F16, and reciprocal W uses an unsigned 18-bit Q1.17 mantissa plus signed exponent. Matrix coefficient and intermediate widths remain unchanged. Input values are range-checked before narrowing; invalid viewport dimensions or out-of-range viewport coordinates discard the complete triangle through the existing perspective error indication.
 
 Each processing run checks counts, IRQ, buffer bounds, sentinels, and input integrity. SystemVerilog assertions check FIFO protocols, data stability during stalls, and counters. Seven passive monitors observe unpack, matrix, clipping/assembly, perspective, viewport, culling, and packing. Numeric comparisons apply to the final output; intermediate stage data is available for diagnosis.
 

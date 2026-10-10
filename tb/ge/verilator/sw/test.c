@@ -107,6 +107,37 @@ int run_test(const test_config *cfg) {
     };
     unsigned batch = cfg->test == TEST_BACKPRESSURE ? 12 : 1;
 
+    /* Exercise both endpoints of the signed 25-bit position and 27-bit UV
+     * fields independently of the scene generator's narrower ranges. */
+    {
+        triangle limits = {0};
+        triangle decoded_limits;
+        uint8_t packed_limits[GE_STRIDE];
+        for (unsigned v = 0; v < 3; ++v) {
+            for (unsigned f = 0; f < 6; ++f) {
+                unsigned width = f < 4 ? 25 : 27;
+                int32_t raw = (v & 1) ? (int32_t)((1u << (width - 1)) - 1)
+                                      : -(int32_t)(1u << (width - 1));
+                limits.v[v].f[f] = raw / 65536.0;
+            }
+            for (unsigned f = 6; f < 10; ++f) {
+                limits.v[v].f[f] = ((v + f) & 1) ? 15 : 0;
+            }
+        }
+        pack_input(&limits, packed_limits);
+        unpack_input(packed_limits, &decoded_limits);
+        for (unsigned v = 0; v < 3; ++v) {
+            for (unsigned f = 0; f < 6; ++f) {
+                failures += mismatch("input_codec_endpoint", 0, v, limits.v[v].f[f],
+                                     decoded_limits.v[v].f[f], 0.0);
+            }
+            for (unsigned f = 6; f < 10; ++f) {
+                failures += mismatch("input_color_endpoint", 0, v, limits.v[v].f[f],
+                                     decoded_limits.v[v].f[f], 0.0);
+            }
+        }
+    }
+
     log_message(1, "[SW] begin test=%s seed=%u timing_seed=%u random_cases=%u\n",
                 test_names[cfg->test], cfg->seed, cfg->timing_seed, cfg->cases);
     log_message(2, "[SW] tolerances xy=%g z=%g uv=%g color=%g inv_w=%g timeout=%u\n", cfg->xy_tol,
@@ -132,6 +163,19 @@ int run_test(const test_config *cfg) {
 
         pack_input(&input, packed);
         unpack_input(packed, &decoded);
+
+        /* The wire codec rounds signed F16 fields, preserves RGBA exactly,
+         * and must not lose more than half an input unit on the round trip. */
+        for (unsigned v = 0; v < 3; ++v) {
+            for (unsigned f = 0; f < 6; ++f) {
+                failures += mismatch("input_codec", 0, v, input.v[v].f[f],
+                                     decoded.v[v].f[f], 0.500001 / 65536.0);
+            }
+            for (unsigned f = 6; f < 10; ++f) {
+                failures += mismatch("input_color_codec", 0, v, trunc(input.v[v].f[f]),
+                                     decoded.v[v].f[f], 0.0);
+            }
+        }
 
         unsigned plane_states[6];
         unsigned fixed_count = golden_model(&decoded, &geometry, decisions, 1, plane_states);
@@ -252,9 +296,6 @@ int run_test(const test_config *cfg) {
             int64_t area = (x[1] - x[0]) * (y[2] - y[0]) -
                            (y[1] - y[0]) * (x[2] - x[0]);
             failures += mismatch("area", r, 0, area, unpack_output_area(observed), 0);
-            for (unsigned byte = 75; byte < GE_STRIDE; ++byte) {
-                failures += mismatch("output_padding", r, 0, 0, observed[byte], 0);
-            }
             static const char *const fields[] = {
                 "x", "y", "z", "inv_w", "u", "v", "r", "g", "b", "a"
             };

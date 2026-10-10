@@ -24,16 +24,25 @@ static int32_t signed_bits(uint32_t v, unsigned width) {
     return (int32_t)(v << (32 - width)) >> (32 - width);
 }
 
+static const unsigned input_offset[6] = {145, 120, 95, 70, 43, 16};
+static const unsigned input_width[6] = {25, 25, 25, 25, 27, 27};
+
 void pack_input(const triangle *input, uint8_t bytes[GE_STRIDE]) {
     memset(bytes, 0xa5, GE_STRIDE); /* Deliberately nonzero padding. */
     for (unsigned v = 0; v < 3; ++v) {
         for (unsigned f = 0; f < 6; ++f) {
-            bits_put(bytes, v * 208 + 16 + (5 - f) * 32, 32,
-                     (uint32_t)(int32_t)llround(input->v[v].f[f] * 65536));
+            double scaled = input->v[v].f[f] * 65536;
+            unsigned width = input_width[f];
+            assert(isfinite(scaled));
+            /* Check before narrowing; the wire format cannot signal overflow. */
+            assert(scaled >= -(double)(1u << (width - 1)) &&
+                   scaled <= (double)((1u << (width - 1)) - 1));
+            bits_put(bytes, v * 170 + input_offset[f], width,
+                     (uint32_t)(int32_t)llround(scaled));
         }
 
         for (unsigned f = 6; f < 10; ++f) {
-            bits_put(bytes, v * 208 + (9 - f) * 4, 4, (uint32_t)input->v[v].f[f]);
+            bits_put(bytes, v * 170 + (9 - f) * 4, 4, (uint32_t)input->v[v].f[f]);
         }
     }
 }
@@ -41,25 +50,24 @@ void pack_input(const triangle *input, uint8_t bytes[GE_STRIDE]) {
 void unpack_input(const uint8_t bytes[GE_STRIDE], triangle *input) {
     for (unsigned v = 0; v < 3; ++v) {
         for (unsigned f = 0; f < 6; ++f) {
-            input->v[v].f[f] = (int32_t)bits_get(bytes, v * 208 + 16 + (5 - f) * 32, 32) / 65536.0;
+            input->v[v].f[f] = signed_bits(bits_get(bytes, v * 170 + input_offset[f], input_width[f]), input_width[f]) / 65536.0;
         }
 
         for (unsigned f = 6; f < 10; ++f) {
-            input->v[v].f[f] = bits_get(bytes, v * 208 + (9 - f) * 4, 4);
+            input->v[v].f[f] = bits_get(bytes, v * 170 + (9 - f) * 4, 4);
         }
     }
 }
 
 void unpack_output(const uint8_t bytes[GE_STRIDE], triangle *output) {
     for (unsigned v = 0; v < 3; ++v) {
-        unsigned base = v * 183;
+        unsigned base = v * 158;
 
-        for (unsigned f = 0; f < 3; ++f) {
-            output->v[v].f[f] = signed_bits(bits_get(bytes, base + 111 + (2 - f) * 24, 24), 24) /
-                                (f == 2 ? 65536.0 : 256.0);
-        }
+        output->v[v].f[0] = signed_bits(bits_get(bytes, base + 139, 19), 19) / 256.0;
+        output->v[v].f[1] = signed_bits(bits_get(bytes, base + 121, 18), 18) / 256.0;
+        output->v[v].f[2] = bits_get(bytes, base + 104, 17) / 65536.0;
 
-        double mantissa = bits_get(bytes, base + 86, 25) / 16777216.0;
+        double mantissa = bits_get(bytes, base + 86, 18) / 131072.0;
         int exponent = signed_bits(bits_get(bytes, base + 80, 6), 6);
         output->v[v].f[3] = ldexp(mantissa, exponent);
 
@@ -74,9 +82,9 @@ void unpack_output(const uint8_t bytes[GE_STRIDE], triangle *output) {
 }
 
 int64_t unpack_output_area(const uint8_t bytes[GE_STRIDE]) {
-    int64_t area = bits_get(bytes, 549, 32) | ((int64_t)bits_get(bytes, 581, 19) << 32);
-    if (area & (INT64_C(1) << 50)) {
-        area -= INT64_C(1) << 51;
+    int64_t area = bits_get(bytes, 474, 32) | ((int64_t)bits_get(bytes, 506, 6) << 32);
+    if (area & (INT64_C(1) << 37)) {
+        area -= INT64_C(1) << 38;
     }
     return area;
 }
@@ -219,9 +227,9 @@ unsigned golden_model(const triangle *input, const geometry_config *geometry,
             double mantissa = frexp(w, &exponent) * 2;
             unsigned index = (unsigned)((mantissa - 1) * 1024);
 
-            /* Midpoint LUT, Q1.24, then exponent scaling as in the numeric contract. */
+            /* Midpoint samples rounded from Q1.24 to Q1.17, then exponent scaling. */
             double midpoint = 1 + (index + 0.5) / 1024;
-            double reciprocal_mantissa = round(16777216.0 / midpoint) / 16777216;
+            double reciprocal_mantissa = floor((round(16777216.0 / midpoint) + 64) / 128) / 131072;
             reciprocal = ldexp(reciprocal_mantissa, 1 - exponent);
         }
 

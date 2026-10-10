@@ -82,8 +82,8 @@ unsigned generate_triangle(unsigned test, unsigned index, uint32_t *seed, triang
     }
 
     if (test == TEST_VIEWPORT) {
-        geometry->width = 801;
-        geometry->height = 603;
+        geometry->width = 639;
+        geometry->height = 479;
     }
 
     if (test >= TEST_CLIP_LEFT && test <= TEST_CLIP_NEAR) {
@@ -210,8 +210,8 @@ unsigned generate_triangle(unsigned test, unsigned index, uint32_t *seed, triang
 
         geometry->cull = index % 3;
         geometry->front = (index / 3) % 2;
-        geometry->width = 320 + ge_random(seed) % 481;
-        geometry->height = 240 + ge_random(seed) % 361;
+        geometry->width = 320 + ge_random(seed) % 321;
+        geometry->height = 240 + ge_random(seed) % 241;
         geometry->matrix[0] = (index % 3 + 1) * 0.5;
         geometry->matrix[5] = 0.5 + (index % 2) * 0.5;
         geometry->matrix[3] = (index % 2) * 0.125;

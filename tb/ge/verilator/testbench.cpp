@@ -87,7 +87,7 @@ static void fail(const char *field, uint64_t expected, uint64_t got) {
         uint8_t packed[GE_STRIDE];
 
         auto saved_address = dut->sw_address_i;
-        for (unsigned word = 0; word < 5; ++word) {
+        for (unsigned word = 0; word < GE_STRIDE / 16; ++word) {
             dut->sw_address_i = dut->vertex_buffer_base_o + word * 16;
             dut->eval();
             for (unsigned b = 0; b < 16; ++b) {
@@ -178,7 +178,9 @@ static void tick() {
         if (transfers & (1u << s)) {
             ++stage_count[s];
             if (config.verbosity >= 2) {
-                static const unsigned widths[] = {208, 208, 208, 208, 183, 600, 128};
+                /* The monitor bus retains a 624-bit slot per stage, while the
+                 * payloads use their actual ABI widths. */
+                static const unsigned widths[] = {170, 208, 208, 208, 158, 512, 128};
                 printf("[RTL] cycle=%llu stage=%s transfer=%llu data=", (unsigned long long)cycles,
                        stages[s], (unsigned long long)stage_count[s]);
                 for (int bit = ((widths[s] + 3) / 4) * 4 - 4; bit >= 0; bit -= 4) {
@@ -216,12 +218,7 @@ static void tick() {
     }
 
     if (stored) {
-        // Canonicalize padding before saving output for exact timing comparisons.
         auto record = pending_data;
-        if (writes % 5 == 4) {
-            record[2] &= 0x00ffffffu;
-            record[3] = 0;
-        }
 
         if (fwrite(record.data(), sizeof(uint32_t), 4, output_file) != 4) {
             throw std::runtime_error("cannot save output artifact");
@@ -240,11 +237,11 @@ static void tick() {
 
     if (active && source == dut->vertex_buffer_end_o && !pending_write && dut->idle_o) {
         if (reads != (dut->vertex_buffer_end_o - dut->vertex_buffer_base_o) / 16) {
-            fail("input_words", 5, reads);
+            fail("input_words", (dut->vertex_buffer_end_o - dut->vertex_buffer_base_o) / 16, reads);
         }
 
-        if (writes % 5) {
-            fail("output_stride", 0, writes % 5);
+        if (writes % (GE_STRIDE / 16)) {
+            fail("output_stride", 0, writes % (GE_STRIDE / 16));
         }
 
         if (destination != dut->primitive_buffer_end_o) {
