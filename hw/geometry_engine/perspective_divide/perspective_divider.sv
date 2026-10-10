@@ -42,7 +42,7 @@ module perspective_divider (
 //      RECIPROCAL W COORDINATE
 //====================================================================================
 
-    logic [24:0] reciprocal; logic signed [5:0] exponent;
+    logic [17:0] reciprocal; logic signed [5:0] exponent;
     inv_w_t inv_w;
 
     assign inv_w.mantissa = reciprocal;
@@ -140,8 +140,8 @@ module perspective_divider (
             end
         end
 
-    /* Pack inv_w_t in bits [30:0]; bit 31 is padding. */
-    assign vertex_o.pos.w = {1'b0, inv_w_ff};
+    /* Pack inv_w_t in bits [23:0]; upper eight bits are padding. */
+    assign vertex_o.pos.w = {8'b0, inv_w_ff};
     assign vertex_o.col = color_ff;
 
     assign busy_o = reciprocal_valid | product_valid_ff | valid_o;

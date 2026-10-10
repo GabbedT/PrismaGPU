@@ -17,24 +17,37 @@ module viewport_transform (
 
     output proc_vertex_t vertex_o,
     output logic valid_o,
-    output logic error_o
+    output logic error_o,
+    /* A new viewport failure, excluding an already reported perspective error. */
+    output logic range_error_o
 );
 
     /* Viewport transform */
-    logic signed [32:0] x_offset, y_offset;
-    logic signed [65:0] x_scaled, y_scaled;
+    logic signed [18:0] x_offset, y_offset;
+    logic signed [29:0] x_scaled, y_scaled;
+    logic range_error;
+
+    /* Accept the small overshoot of the midpoint reciprocal LUT at clip planes.
+     * Reject unsupported inputs before their narrowed payload can be consumed. */
+    assign range_error = (width_screen_i == 0) || (width_screen_i > 640) ||
+                         (height_screen_i == 0) || (height_screen_i > 480) ||
+                         ($signed(vertex_i.pos.x) < -32'sd65792) ||
+                         ($signed(vertex_i.pos.x) > 32'sd65792) ||
+                         ($signed(vertex_i.pos.y) < -32'sd65792) ||
+                         ($signed(vertex_i.pos.y) > 32'sd65792) ||
+                         (vertex_i.pos.z > 32'd65792);
 
     /* This is (1.0 + x) and (1.0 - y) */
-    assign x_offset = 33'sd65536 + $signed(vertex_i.pos.x);
-    assign y_offset = 33'sd65536 - $signed(vertex_i.pos.y);
+    assign x_offset = 19'sd65536 + $signed(vertex_i.pos.x[17:0]);
+    assign y_offset = 19'sd65536 - $signed(vertex_i.pos.y[17:0]);
 
-    assign x_scaled = x_offset * $signed({1'b0, width_screen_i});
-    assign y_scaled = y_offset * $signed({1'b0, height_screen_i});
+    assign x_scaled = x_offset * $signed({1'b0, width_screen_i[9:0]});
+    assign y_scaled = y_offset * $signed({1'b0, height_screen_i[8:0]});
 
 
     inv_w_t inv_w_ff;
-    logic signed [65:0] x_scaled_ff, y_scaled_ff;
-    logic [$bits(vertex_i.pos.z) - 1:0] z_ff;
+    logic signed [29:0] x_scaled_ff, y_scaled_ff;
+    logic [16:0] z_ff;
     logic [$bits(vertex_i.tex.u) - 1:0] u_ff, v_ff;
     logic [$bits(vertex_i.col.r) - 1:0] r_ff, g_ff, b_ff, a_ff;
 
@@ -42,7 +55,7 @@ module viewport_transform (
             if (!stall_i) begin
                 x_scaled_ff <= x_scaled;
                 y_scaled_ff <= y_scaled;
-                z_ff <= vertex_i.pos.z;
+                z_ff <= vertex_i.pos.z[16:0];
                 inv_w_ff <= inv_w_t'(vertex_i.pos.w);
 
                 u_ff <= vertex_i.tex.u;
@@ -59,16 +72,18 @@ module viewport_transform (
             if (!rst_n_i) begin
                 valid_o <= 1'b0;
                 error_o <= 1'b0;
+                range_error_o <= 1'b0;
             end else if (!stall_i) begin
                 valid_o <= valid_i;
-                error_o <= valid_i & error_i;
+                error_o <= valid_i & (error_i | range_error);
+                range_error_o <= valid_i & !error_i & range_error;
             end
         end
 
 
     /* Divide by two and convert 16 fractional bits into eight. */
-    assign vertex_o.pos.x = (x_scaled_ff + 66'sd256) >>> 9;
-    assign vertex_o.pos.y = (y_scaled_ff + 66'sd256) >>> 9;
+    assign vertex_o.pos.x = 19'((x_scaled_ff + 30'sd256) >>> 9);
+    assign vertex_o.pos.y = 18'((y_scaled_ff + 30'sd256) >>> 9);
 
     assign vertex_o.pos.z = z_ff;
     assign vertex_o.pos.w = inv_w_ff;

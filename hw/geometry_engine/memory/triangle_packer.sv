@@ -99,17 +99,17 @@ module triangle_packer #(
 //      PACKER
 //====================================================================================
 
-    typedef enum logic [2:0] {
-        WORD0, WORD1, WORD2, WORD3, WORD4
+    typedef enum logic [1:0] {
+        WORD0, WORD1, WORD2, WORD3
     } fsm_state_t;
 
     fsm_state_t state_CRT, state_NXT;
-    logic [639:0] packed_triangle;
+    logic [511:0] packed_triangle;
     logic [127:0] write_data;
     logic write_enable, read_enable;
 
-    /* Low bits first: 549 vertex bits, 51 signed area bits, 40 zero padding bits. */
-    assign packed_triangle = {{(640 - $bits(proc_triangle_t)){1'b0}}, triangle_data};
+    /* Low bits first: 474 vertex bits and 38 signed area bits, no padding. */
+    assign packed_triangle = triangle_data;
 
         always_ff @(posedge clk_i) begin
             if (!rst_n_i) begin
@@ -119,7 +119,7 @@ module triangle_packer #(
             end
         end
 
-    /* Pack the triangle out from the triangle buffer into 5 
+    /* Pack the triangle out from the triangle buffer into 4
      * words of 128 bits each, write each one into the final buffer */
     always_comb begin
         state_NXT = state_CRT;
@@ -153,14 +153,6 @@ module triangle_packer #(
 
             WORD3: begin
                 write_data = packed_triangle[511:384];
-
-                if (write_enable) begin
-                    state_NXT = WORD4;
-                end
-            end
-
-            WORD4: begin
-                write_data = packed_triangle[639:512];
 
                 if (write_enable) begin
                     triangle_done = 1'b1;

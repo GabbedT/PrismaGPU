@@ -3,9 +3,9 @@
 
 package triangle_pkg;
 
-    /* Positive 1/w = (Q1.24 mantissa) * 2^exponent; 31 packed bits. */
+    /* Positive 1/w = (Q1.17 mantissa) * 2^exponent; 24 packed bits. */
     typedef struct packed {
-        logic [24:0] mantissa;
+        logic [17:0] mantissa;
         logic signed [5:0] exponent;
     } inv_w_t;
     
@@ -17,11 +17,11 @@ package triangle_pkg;
         logic [31:0] w;
     } position_t;
 
-    /* Q16.8 coordinates and normalized reciprocal W. */
+    /* Signed screen XY with eight fractional bits; unsigned Z with sixteen. */
     typedef struct packed {
-        logic [23:0] x;
-        logic [23:0] y;
-        logic [23:0] z;
+        logic signed [18:0] x;
+        logic signed [17:0] y;
+        logic [16:0] z;
         inv_w_t      w;
     } screen_pos_t;
 
@@ -36,6 +36,22 @@ package triangle_pkg;
         logic [3:0] b;
         logic [3:0] a;
     } color_t;
+
+    /* Wire input: 170 bits per vertex, 510 bits plus two padding bits per triangle.
+     * All position/texture fields retain sixteen fractional bits. */
+    typedef struct packed {
+        logic signed [24:0] x, y, z, w;
+    } input_position_t;
+
+    typedef struct packed {
+        logic signed [26:0] u, v;
+    } input_tex_coord_t;
+
+    typedef struct packed {
+        input_position_t pos;
+        input_tex_coord_t tex;
+        color_t col;
+    } input_vertex_t;
 
     typedef struct packed {
         position_t  pos;
@@ -57,7 +73,7 @@ package triangle_pkg;
     /* Post process triangle */
     typedef struct packed {
         /* Twice signed screen area, with 16 fractional bits; set by culling. */
-        logic signed [50:0] area;
+        logic signed [37:0] area;
         proc_vertex_t [2:0] vtx;
     } proc_triangle_t;
 

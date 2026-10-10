@@ -7,7 +7,7 @@ module matrix_engine (
     input logic stall_i,
 
     /* Vertex to process */
-    input vertex_t vertex_i,
+    input input_vertex_t vertex_i,
     input logic valid_i,
 
     /* Matrix coefficients */
@@ -19,7 +19,8 @@ module matrix_engine (
     output logic busy_o
 );
 
-    logic [3:0][31:0] vertex_position, processed_element;
+    logic [3:0][24:0] vertex_position;
+    logic [3:0][31:0] processed_element;
     tex_coord_t texture_product_ff, texture_ff;
     color_t color_product_ff, color_ff;
     logic valid_product_ff;
@@ -27,7 +28,8 @@ module matrix_engine (
     /* Align attributes and valid with the products, then the partial sums. */
     always_ff @(posedge clk_i) begin
         if (!stall_i) begin
-            texture_product_ff <= vertex_i.tex;
+            texture_product_ff.u <= 32'($signed(vertex_i.tex.u));
+            texture_product_ff.v <= 32'($signed(vertex_i.tex.v));
             color_product_ff <= vertex_i.col;
             texture_ff <= texture_product_ff;
             color_ff <= color_product_ff;

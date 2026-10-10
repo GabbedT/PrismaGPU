@@ -7,7 +7,7 @@ module geometry_engine_pipeline (
     input logic stall_i,
 
     /* Input transfer */
-    input vertex_t vertex_i,
+    input input_vertex_t vertex_i,
     input logic valid_i,
     output logic stall_o,
 
@@ -188,7 +188,7 @@ module geometry_engine_pipeline (
 //====================================================================================
 
     proc_vertex_t viewport_vertex;
-    logic viewport_valid, viewport_error;
+    logic viewport_valid, viewport_error, viewport_range_error;
 
     viewport_transform screen_transform (
         .clk_i           ( clk_i                 ),
@@ -201,7 +201,8 @@ module geometry_engine_pipeline (
         .height_screen_i ( height_screen_i       ),
         .vertex_o        ( viewport_vertex       ),
         .valid_o         ( viewport_valid        ),
-        .error_o         ( viewport_error        )
+        .error_o         ( viewport_error        ),
+        .range_error_o   ( viewport_range_error  )
     );
 
 
@@ -248,7 +249,7 @@ module geometry_engine_pipeline (
             if (rst_n_i) begin
                 if (clip_error) begin
                     error_o = TRIANGLE_CLIP_ERROR;
-                end else if (perspective_valid & perspective_error) begin
+                end else if ((perspective_valid & perspective_error) | viewport_range_error) begin
                     error_o = TRIANGLE_PERSPECTIVE_ERROR;
                 end
             end

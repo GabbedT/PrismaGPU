@@ -16,7 +16,7 @@ module triangle_unpacker #(
     output logic [$clog2(FIFO_DEPTH + 1) - 1:0] word_count_o,
 
     /* Output transfer */
-    output vertex_t vertex_o,
+    output input_vertex_t vertex_o,
     output logic valid_o
 );
 
@@ -107,12 +107,12 @@ module triangle_unpacker #(
 //      UNPACKER
 //====================================================================================
 
-    typedef enum logic [2:0] {
-        WORD0, WORD1, WORD2, WORD3, WORD4
+    typedef enum logic [1:0] {
+        WORD0, WORD1, WORD2, WORD3
     } fsm_state_t;
 
     fsm_state_t state_CRT, state_NXT;
-    logic [175:0] data_CRT, data_NXT;
+    logic [127:0] data_CRT, data_NXT;
 
         always_ff @(posedge clk_i) begin
             if (!rst_n_i) begin
@@ -128,7 +128,7 @@ module triangle_unpacker #(
             end
         end
 
-    /* Five words per triangle, low bits first; word 4[127:112] is padding */
+    /* Four words per triangle, low bits first; word 3[127:126] is padding. */
     always_comb begin : fsm_logic
         state_NXT = state_CRT;
         data_NXT = data_CRT;
@@ -145,33 +145,27 @@ module triangle_unpacker #(
                 end
 
                 WORD1: begin
-                    vertex_o = {fifo_data[79:0], data_CRT[127:0]};
+                    vertex_o = {fifo_data[41:0], data_CRT};
                     valid_o = 1'b1;
 
-                    /* Keep the first 48 bits of vertex 1 */
-                    data_NXT[47:0] = fifo_data[127:80];
+                    /* Keep the first 86 bits of vertex 1. */
+                    data_NXT[85:0] = fifo_data[127:42];
                     state_NXT = WORD2;
                 end
 
                 WORD2: begin
-                    data_NXT[175:48] = fifo_data;
+                    vertex_o = {fifo_data[83:0], data_CRT[85:0]};
+                    valid_o = 1'b1;
+                    /* Keep the first 44 bits of vertex 2. */
+                    data_NXT[43:0] = fifo_data[127:84];
                     state_NXT = WORD3;
                 end
 
                 WORD3: begin
-                    vertex_o = {fifo_data[31:0], data_CRT};
+                    vertex_o = {fifo_data[125:0], data_CRT[43:0]};
                     valid_o = 1'b1;
 
-                    /* Keep the first 96 bits of vertex 2 */
-                    data_NXT[95:0] = fifo_data[127:32];
-                    state_NXT = WORD4;
-                end
-
-                WORD4: begin
-                    vertex_o = {fifo_data[111:0], data_CRT[95:0]};
-                    valid_o = 1'b1;
-
-                    /* Discard the final 16 padding bits */
+                    /* Discard the final two padding bits. */
                     state_NXT = WORD0;
                 end
 

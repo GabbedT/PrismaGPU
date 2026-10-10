@@ -12,8 +12,8 @@ module reciprocal_divider (
     output logic error_o,
     output logic valid_o,
 
-    /* Q1.24 mantissa */
-    output logic [24:0] reciprocal_o,
+    /* Q1.17 mantissa; normalization retains the ten-bit table index. */
+    output logic [17:0] reciprocal_o,
     output logic signed [5:0] exponent_o
 );
 

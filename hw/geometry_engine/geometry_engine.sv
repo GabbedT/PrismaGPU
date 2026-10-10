@@ -50,7 +50,8 @@ module geometry_engine #(
     logic datapath_rst_n, pipeline_stall, pipeline_input_stall, unpacker_stall, packer_stall;
     logic busy, vertex_valid, triangle_valid, forward_valid;
 
-    vertex_t vertex, forward_vertex;
+    input_vertex_t vertex;
+    vertex_t forward_vertex;
     proc_triangle_t triangle;
     triangle_error_t error;
     front_face_t front_face;

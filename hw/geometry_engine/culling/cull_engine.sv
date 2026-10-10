@@ -25,10 +25,12 @@ module cull_engine (
 //==================================================================================== 
 
     /* Subtraction intermediate results */
-    logic signed [24:0] sub_xba, sub_xca, sub_yba, sub_yca;
+    /* Valid GE output spans at most the viewport plus reciprocal rounding. */
+    logic signed [18:0] sub_xba, sub_xca;
+    logic signed [17:0] sub_yba, sub_yca;
 
     /* Multiplications */
-    logic signed [49:0] mul_1, mul_1_ff, mul_2, mul_2_ff;
+    logic signed [36:0] mul_1, mul_1_ff, mul_2, mul_2_ff;
     proc_vertex_t [2:0] vertices_ff;
 
 
@@ -41,7 +43,7 @@ module cull_engine (
     assign sub_xca = $signed(triangle_i.vtx[2].pos.x) - $signed(triangle_i.vtx[0].pos.x);
     assign sub_yba = $signed(triangle_i.vtx[1].pos.y) - $signed(triangle_i.vtx[0].pos.y);
 
-    assign mul_2 = sub_yba * sub_xca;
+    assign mul_2 = sub_xca * sub_yba;
 
 
         always_ff @(posedge clk_i) begin
@@ -69,7 +71,7 @@ module cull_engine (
 //      SECOND STAGE
 //==================================================================================== 
 
-    logic signed [50:0] triangle_area;
+    logic signed [37:0] triangle_area;
 
     assign triangle_area = mul_1_ff - mul_2_ff;
 
@@ -79,9 +81,9 @@ module cull_engine (
 
     logic zero_area, ccw, cw;
 
-    assign zero_area = triangle_area == 51'sd0;
-    assign ccw = triangle_area < 51'sd0;
-    assign cw = triangle_area > 51'sd0;
+    assign zero_area = triangle_area == 38'sd0;
+    assign ccw = triangle_area < 38'sd0;
+    assign cw = triangle_area > 38'sd0;
 
 
     /* Selection */
