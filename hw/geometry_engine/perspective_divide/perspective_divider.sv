@@ -11,39 +11,16 @@ module perspective_divider (
 
     output vertex_t vertex_o,
     output logic error_o,
-    output logic valid_o
+    output logic valid_o,
+    output logic busy_o
 );
-
-//====================================================================================
-//      FUNCTIONS
-//====================================================================================
-
-    /* Apply the mantissa reciprocal and exponent; return signed Q16.16. */
-    function automatic logic [31:0] perspective_product (
-        input logic [31:0] value_i,
-        input logic [24:0] reciprocal_i,
-        input logic signed [5:0] exponent_i
-    );
-        logic signed [32:0] value;
-        logic signed [25:0] reciprocal_value;
-        logic signed [58:0] product;
-        logic [5:0] shift_amount;
-
-        value = {value_i[31], value_i};
-        reciprocal_value = {1'b0, reciprocal_i};
-        product = value * reciprocal_value;
-        shift_amount = 6'sd24 + exponent_i;
-
-        perspective_product = product >>> shift_amount;
-    endfunction
-
 
 //====================================================================================
 //      INPUT REGISTER
 //====================================================================================
 
     vertex_t vertex_CRT;
-    logic reciprocal_error;
+    logic reciprocal_error, reciprocal_error_ff, reciprocal_valid;
 
         always_ff @(posedge clk_i) begin
             if (!stall_i) begin
@@ -54,9 +31,9 @@ module perspective_divider (
     /* Preserve every vertex token, including failed perspective divisions. */
         always_ff @(posedge clk_i) begin
             if (!rst_n_i) begin
-                error_o <= 1'b0;
+                reciprocal_error_ff <= 1'b0;
             end else if (!stall_i) begin
-                error_o <= valid_i & reciprocal_error;
+                reciprocal_error_ff <= valid_i & reciprocal_error;
             end
         end
 
@@ -80,7 +57,7 @@ module perspective_divider (
         .valid_i      ( valid_i          ),
 
         .error_o      ( reciprocal_error ),
-        .valid_o      ( valid_o          ),
+        .valid_o      ( reciprocal_valid ),
         .reciprocal_o ( reciprocal       ),
         .exponent_o   ( exponent         )
     );
@@ -90,17 +67,84 @@ module perspective_divider (
 //      PERSPECTIVE PRODUCTS
 //====================================================================================
 
-        always_comb begin
-            vertex_o = vertex_CRT;
+    inv_w_t inv_w_input_ff, inv_w_ff;
+    color_t color_input_ff, color_ff;
+    logic product_valid_ff, product_error_ff;
 
-            /* Pack inv_w_t in bits [30:0]; bit 31 is padding. */
-            vertex_o.pos.w = {1'b0, inv_w};
-            vertex_o.pos.x = perspective_product(vertex_CRT.pos.x, reciprocal, exponent);
-            vertex_o.pos.y = perspective_product(vertex_CRT.pos.y, reciprocal, exponent);
-            vertex_o.pos.z = perspective_product(vertex_CRT.pos.z, reciprocal, exponent);
-            vertex_o.tex.u = perspective_product(vertex_CRT.tex.u, reciprocal, exponent);
-            vertex_o.tex.v = perspective_product(vertex_CRT.tex.v, reciprocal, exponent);
+    perspective_product product_x (
+        .clk_i        ( clk_i            ),
+        .stall_i      ( stall_i          ),
+        .value_i      ( vertex_CRT.pos.x ),
+        .reciprocal_i ( reciprocal       ),
+        .exponent_i   ( exponent         ),
+        .value_o      ( vertex_o.pos.x   )
+    );
+
+    perspective_product product_y (
+        .clk_i        ( clk_i            ),
+        .stall_i      ( stall_i          ),
+        .value_i      ( vertex_CRT.pos.y ),
+        .reciprocal_i ( reciprocal       ),
+        .exponent_i   ( exponent         ),
+        .value_o      ( vertex_o.pos.y   )
+    );
+
+    perspective_product product_z (
+        .clk_i        ( clk_i            ),
+        .stall_i      ( stall_i          ),
+        .value_i      ( vertex_CRT.pos.z ),
+        .reciprocal_i ( reciprocal       ),
+        .exponent_i   ( exponent         ),
+        .value_o      ( vertex_o.pos.z   )
+    );
+
+    perspective_product product_u (
+        .clk_i        ( clk_i            ),
+        .stall_i      ( stall_i          ),
+        .value_i      ( vertex_CRT.tex.u ),
+        .reciprocal_i ( reciprocal       ),
+        .exponent_i   ( exponent         ),
+        .value_o      ( vertex_o.tex.u   )
+    );
+
+    perspective_product product_v (
+        .clk_i        ( clk_i            ),
+        .stall_i      ( stall_i          ),
+        .value_i      ( vertex_CRT.tex.v ),
+        .reciprocal_i ( reciprocal       ),
+        .exponent_i   ( exponent         ),
+        .value_o      ( vertex_o.tex.v   )
+    );
+
+    /* Align reciprocal, color and control with the input and product registers. */
+        always_ff @(posedge clk_i) begin
+            if (!stall_i) begin
+                inv_w_input_ff <= inv_w;
+                color_input_ff <= vertex_CRT.col;
+                inv_w_ff <= inv_w_input_ff;
+                color_ff <= color_input_ff;
+            end
         end
+
+        always_ff @(posedge clk_i) begin
+            if (!rst_n_i) begin
+                product_valid_ff <= 1'b0;
+                product_error_ff <= 1'b0;
+                valid_o <= 1'b0;
+                error_o <= 1'b0;
+            end else if (!stall_i) begin
+                product_valid_ff <= reciprocal_valid;
+                product_error_ff <= reciprocal_error_ff;
+                valid_o <= product_valid_ff;
+                error_o <= product_error_ff;
+            end
+        end
+
+    /* Pack inv_w_t in bits [30:0]; bit 31 is padding. */
+    assign vertex_o.pos.w = {1'b0, inv_w_ff};
+    assign vertex_o.col = color_ff;
+
+    assign busy_o = reciprocal_valid | product_valid_ff | valid_o;
 
 endmodule : perspective_divider
 
