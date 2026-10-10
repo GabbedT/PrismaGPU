@@ -61,32 +61,6 @@ module vertex_interpolator (
     endfunction
 
 
-    function automatic logic signed [31:0] interpolate_position (
-        input logic signed [31:0] start_value,
-        input logic signed [31:0] end_value,
-        input logic        [16:0] t,
-        input logic               round_nearest
-    );
-        logic signed [32:0] delta;
-        logic signed [50:0] product;
-        logic [31:0] integral;
-        logic integer_lsb, round_up, carry_in;
-
-        delta = {end_value[31], end_value} - {start_value[31], start_value};
-        product = delta * $signed({1'b0, t});
-
-        /* Tie parity belongs to the sum, not just the product. */
-        integer_lsb = start_value[0] ^ product[16];
-        round_up = round_nearest & product[15] & ((|product[14:0]) | integer_lsb);
-
-        /* Fold rounding into bit-zero carry to keep a single position adder. */
-        carry_in = (start_value[0] & product[16]) | (integer_lsb & round_up);
-        integral = {start_value[31:1], 1'b1} + {product[47:17], carry_in};
-
-        interpolate_position = {integral[31:1], (integer_lsb ^ round_up)};
-    endfunction
-
-
     function automatic logic [3:0] interpolate_color (
         input logic [3:0] start_value,
         input logic [3:0] end_value,
@@ -156,7 +130,35 @@ module vertex_interpolator (
     logic signed [31:0] interpolated_position; logic [3:0] interpolated_color;
     logic round_position;
 
-    assign interpolated_position = interpolate_position(crt_pos, nxt_pos, t, round_position);
+    logic signed [32:0] position_delta;
+    logic signed [50:0] position_product, position_product_ff;
+    logic signed [31:0] start_position_ff;
+    logic round_position_ff;
+    logic [31:0] position_integral;
+    logic integer_lsb, round_up, carry_in;
+
+    /* First stage: subtract and multiply, retaining the matching start value. */
+    assign position_delta = {nxt_pos[31], nxt_pos} - {crt_pos[31], crt_pos};
+    assign position_product = position_delta * $signed({1'b0, t});
+
+    always_ff @(posedge clk_i) begin
+        if (!stall_i) begin
+            position_product_ff <= position_product;
+            start_position_ff <= crt_pos;
+            round_position_ff <= round_position;
+        end
+    end
+
+    /* Second stage: tie parity belongs to the sum, not just the product. */
+    assign integer_lsb = start_position_ff[0] ^ position_product_ff[16];
+    assign round_up = round_position_ff & position_product_ff[15] & ((|position_product_ff[14:0]) | integer_lsb);
+
+    /* Fold rounding into bit-zero carry to keep a single position adder. */
+    assign carry_in = (start_position_ff[0] & position_product_ff[16]) | (integer_lsb & round_up);
+    assign position_integral = {start_position_ff[31:1], 1'b1} + {position_product_ff[47:17], carry_in};
+
+    /* Final interpolated position */
+    assign interpolated_position = {position_integral[31:1], (integer_lsb ^ round_up)};
 
     assign interpolated_color = interpolate_color(crt_col, nxt_col, t);
 
@@ -219,8 +221,6 @@ module vertex_interpolator (
                     crt_pos = crt_vertex_i.pos.x;
                     nxt_pos = nxt_vertex_i.pos.x;
 
-                    new_vertex_NXT.pos.x = interpolated_position;
-
                     state_NXT = INTP_Y;
                 end
 
@@ -228,7 +228,7 @@ module vertex_interpolator (
                     crt_pos = crt_vertex_i.pos.y;
                     nxt_pos = nxt_vertex_i.pos.y;
 
-                    new_vertex_NXT.pos.y = interpolated_position;
+                    new_vertex_NXT.pos.x = interpolated_position;
 
                     state_NXT = INTP_Z;
                 end
@@ -237,7 +237,7 @@ module vertex_interpolator (
                     crt_pos = crt_vertex_i.pos.z;
                     nxt_pos = nxt_vertex_i.pos.z;
 
-                    new_vertex_NXT.pos.z = interpolated_position;
+                    new_vertex_NXT.pos.y = interpolated_position;
 
                     state_NXT = INTP_W;
                 end
@@ -246,7 +246,7 @@ module vertex_interpolator (
                     crt_pos = crt_vertex_i.pos.w;
                     nxt_pos = nxt_vertex_i.pos.w;
 
-                    new_vertex_NXT.pos.w = interpolated_position;
+                    new_vertex_NXT.pos.z = interpolated_position;
 
                     state_NXT = INTP_U;
                 end
@@ -254,6 +254,15 @@ module vertex_interpolator (
                 INTP_U: begin
                     crt_pos = crt_vertex_i.tex.u;
                     nxt_pos = nxt_vertex_i.tex.u;
+
+                    new_vertex_NXT.pos.w = interpolated_position;
+
+                    state_NXT = INTP_V;
+                end
+
+                INTP_V: begin
+                    crt_pos = crt_vertex_i.tex.v;
+                    nxt_pos = nxt_vertex_i.tex.v;
 
                     new_vertex_NXT.tex.u = interpolated_position;
 
@@ -272,15 +281,6 @@ module vertex_interpolator (
                         NEAR_PLANE: new_vertex_NXT.pos.z = '0;
                     endcase
 
-                    state_NXT = INTP_V;
-                end
-
-                INTP_V: begin
-                    crt_pos = crt_vertex_i.tex.v;
-                    nxt_pos = nxt_vertex_i.tex.v;
-
-                    new_vertex_NXT.tex.v = interpolated_position;
-
                     state_NXT = INTP_R;
                 end
 
@@ -288,6 +288,7 @@ module vertex_interpolator (
                     crt_col = crt_vertex_i.col.r;
                     nxt_col = nxt_vertex_i.col.r;
 
+                    new_vertex_NXT.tex.v = interpolated_position;
                     new_vertex_NXT.col.r = interpolated_color;
 
                     state_NXT = INTP_G;
