@@ -91,7 +91,7 @@ module tb_top (
         assert ($bits(vertex_t) == 208 && $bits(triangle_t) == 624)
             else $fatal(1, "Input record layout changed; update the software codec");
 
-        assert ($bits(proc_vertex_t) == 183 && $bits(proc_triangle_t) == 549)
+        assert ($bits(proc_vertex_t) == 183 && $bits(proc_triangle_t) == 600)
             else $fatal(1, "Output record layout changed; update the software codec");
     end
 

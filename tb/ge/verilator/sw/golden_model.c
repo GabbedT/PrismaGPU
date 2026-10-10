@@ -73,6 +73,14 @@ void unpack_output(const uint8_t bytes[GE_STRIDE], triangle *output) {
     }
 }
 
+int64_t unpack_output_area(const uint8_t bytes[GE_STRIDE]) {
+    int64_t area = bits_get(bytes, 549, 32) | ((int64_t)bits_get(bytes, 581, 19) << 32);
+    if (area & (INT64_C(1) << 50)) {
+        area -= INT64_C(1) << 51;
+    }
+    return area;
+}
+
 static double distance(const vertex *v, unsigned plane) {
     const double *p = v->f;
     switch (plane) {

@@ -243,6 +243,18 @@ int run_test(const test_config *cfg) {
             triangle actual;
             gpu_read(GE_OUTPUT + r * GE_STRIDE, observed, GE_STRIDE);
             unpack_output(observed, &actual);
+            /* Recompute exactly from the transmitted Q16.8 vertices. */
+            int64_t x[3], y[3];
+            for (unsigned v = 0; v < 3; ++v) {
+                x[v] = llround(actual.v[v].f[0] * 256.0);
+                y[v] = llround(actual.v[v].f[1] * 256.0);
+            }
+            int64_t area = (x[1] - x[0]) * (y[2] - y[0]) -
+                           (y[1] - y[0]) * (x[2] - x[0]);
+            failures += mismatch("area", r, 0, area, unpack_output_area(observed), 0);
+            for (unsigned byte = 75; byte < GE_STRIDE; ++byte) {
+                failures += mismatch("output_padding", r, 0, 0, observed[byte], 0);
+            }
             static const char *const fields[] = {
                 "x", "y", "z", "inv_w", "u", "v", "r", "g", "b", "a"
             };

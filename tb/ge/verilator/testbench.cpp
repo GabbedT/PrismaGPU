@@ -178,7 +178,7 @@ static void tick() {
         if (transfers & (1u << s)) {
             ++stage_count[s];
             if (config.verbosity >= 2) {
-                static const unsigned widths[] = {208, 208, 208, 208, 183, 549, 128};
+                static const unsigned widths[] = {208, 208, 208, 208, 183, 600, 128};
                 printf("[RTL] cycle=%llu stage=%s transfer=%llu data=", (unsigned long long)cycles,
                        stages[s], (unsigned long long)stage_count[s]);
                 for (int bit = ((widths[s] + 3) / 4) * 4 - 4; bit >= 0; bit -= 4) {
@@ -219,8 +219,8 @@ static void tick() {
         // Canonicalize padding before saving output for exact timing comparisons.
         auto record = pending_data;
         if (writes % 5 == 4) {
-            record[1] &= 31;
-            record[2] = record[3] = 0;
+            record[2] &= 0x00ffffffu;
+            record[3] = 0;
         }
 
         if (fwrite(record.data(), sizeof(uint32_t), 4, output_file) != 4) {

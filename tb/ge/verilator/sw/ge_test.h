@@ -40,7 +40,7 @@ enum test_id {
     TEST_OUTPUT_COUNTS
 };
 
-/* Packed SV records: 3*208 input bits, 3*183 output bits, each padded to 640.
+/* Packed SV records: 3*208 input bits, 3*183 + 51 area output bits, padded to 640.
  * proc_vertex_t is 103 position + 64 UV + 16 RGBA = 183 bits. */
 enum {
     GE_STRIDE = 80,
@@ -115,6 +115,7 @@ unsigned generate_triangle(unsigned test, unsigned index, uint32_t *seed, triang
 void pack_input(const triangle *input, uint8_t bytes[GE_STRIDE]);
 void unpack_input(const uint8_t bytes[GE_STRIDE], triangle *input);
 void unpack_output(const uint8_t bytes[GE_STRIDE], triangle *output);
+int64_t unpack_output_area(const uint8_t bytes[GE_STRIDE]);
 unsigned golden_model(const triangle *input, const geometry_config *geometry,
                       triangle out[GE_MAX_OUTPUT], int fixed, unsigned plane_states[6]);
 int run_test(const test_config *cfg);
