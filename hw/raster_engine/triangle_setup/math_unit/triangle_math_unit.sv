@@ -383,7 +383,7 @@ module triangle_math_unit #(
             endcase
         end
 
-    triangle_multiplier #(.LATENCY(MULTIPLIER_LATENCY)) multiplier_unit (
+    triangle_multiply_unit #(.LATENCY(MULTIPLIER_LATENCY)) multiplier_unit (
         .clk_i(clk_i),
         .rst_n_i(rst_n_i),
         .req_valid_i(mul_req_valid),
@@ -590,13 +590,13 @@ module triangle_math_unit #(
                             out_data <= '0;
                             status_o <= STATUS_OVERFLOW;
                             state <= RESPONSE;
+                        end else begin
+                            command_reg <= command_i;
+                            micro_pc <= '0;
+                            status_o <= STATUS_OK;
+                            state <= ISSUE;
                         end
                     end
-
-                    command_reg <= command_i;
-                    micro_pc <= '0;
-                    status_o <= STATUS_OK;
-                    state <= ISSUE;
                 end
 
                 ISSUE: begin

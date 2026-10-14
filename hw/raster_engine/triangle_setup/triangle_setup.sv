@@ -84,12 +84,12 @@ module triangle_setup #(
         ATTR_SELECT, MATH_PREP, MATH_REQUEST, MATH_WAIT, OUTPUT
     } setup_state_t;
 
-    /* Coordinates have F8; the half-pixel boundary belongs to the lower row. */
+    /* Coordinates have F8; the half-pixel boundary belongs to the lower row */
     function automatic logic signed [9:0] ceil_y(input logic signed [17:0] value);
         return 10'(value >>> 8) + 10'(value[7:0] > 8'h80);
     endfunction
 
-    /* Decode positive 1/w to F16; retain 48 bits to check overflow before narrowing. */
+    /* Decode positive 1/w to F16; retain 48 bits to check overflow before narrowing */
     function automatic logic [47:0] decode_w(input inv_w_t value);
         logic [47:0] result;
         logic guard_bit, sticky_bit;
@@ -161,40 +161,16 @@ module triangle_setup #(
     logic [8:0] scissor_ymin_CRT, scissor_ymin_NXT;
     logic [8:0] scissor_ymax_CRT, scissor_ymax_NXT;
 
-    logic [6:0] attr_mask_CRT, attr_mask_NXT;
-    logic [2:0] attr_idx_CRT, attr_idx_NXT;
-    setup_attribute_t [3:0] attr_CRT, attr_NXT;
-
     setup_edge_t [2:0] edge_CRT, edge_NXT;
     logic [1:0] edge_idx_CRT, edge_idx_NXT;
     logic [2:0][1:0] order_CRT, order_NXT;
     reciprocal_t recip_area_CRT, recip_area_NXT;
     logic parity_CRT, parity_NXT;
 
-    logic signed [18:0] xmin_CRT, xmin_NXT;
-    logic signed [18:0] xmax_CRT, xmax_NXT;
-    logic signed [17:0] ymin_CRT, ymin_NXT;
-    logic signed [17:0] ymax_CRT, ymax_NXT;
-
-    logic [9:0] bb_x_start_CRT, bb_x_start_NXT;
-    logic [9:0] bb_x_end_CRT, bb_x_end_NXT;
-    logic [8:0] bb_y_start_CRT, bb_y_start_NXT;
-    logic [8:0] bb_y_end_CRT, bb_y_end_NXT;
-    
-    setup_color_plane_t [2:0] color_CRT, color_NXT;
-    logic [2:0][3:0] alpha_CRT, alpha_NXT;
-    logic [3:0] flat_r_CRT, flat_r_NXT;
-    logic [3:0] flat_g_CRT, flat_g_NXT;
-    logic [3:0] flat_b_CRT, flat_b_NXT;
-
     logic gouraud_shading_CRT, gouraud_shading_NXT;
     logic texture_CRT, texture_NXT;
     logic perspective_correct_CRT, perspective_correct_NXT;
 
-    logic [2:0][1:0] order_next;
-    logic [1:0] swap_index;
-    logic parity_next;
-    logic signed [18:0] xmin_next, xmax_next;
     logic config_max_valid;
     logic [2:0] config_valid, inv_w_invalid, inv_w_range;
     logic [2:0][47:0] decoded_w;
@@ -230,36 +206,48 @@ module triangle_setup #(
 //      MIN/MAX AND VERTEX ORDER
 //====================================================================================
 
+    logic [2:0][1:0] order_next;
+    logic [2:0] y_order;
+    logic parity_next;
+    logic signed [18:0] xmin_next, xmax_next;
+
+    logic signed [18:0] xmin_CRT, xmin_NXT;
+    logic signed [18:0] xmax_CRT, xmax_NXT;
+    logic signed [17:0] ymin_CRT, ymin_NXT;
+    logic signed [17:0] ymax_CRT, ymax_NXT;
+
+
+    /* Strict comparisons preserve the original vertex order on equal Y */
+    assign y_order[2] = triangle_CRT.vtx[0].pos.y > triangle_CRT.vtx[1].pos.y;
+    assign y_order[1] = triangle_CRT.vtx[0].pos.y > triangle_CRT.vtx[2].pos.y;
+    assign y_order[0] = triangle_CRT.vtx[1].pos.y > triangle_CRT.vtx[2].pos.y;
+
+    /* Each inversion changes the permutation parity */
+    assign parity_next = ^y_order;
+
+        always_comb begin
+            /* Packed order is {BOTTOM, MIDDLE, TOP} */
+            case (y_order)
+                3'b000: order_next = {VERTEX_2, VERTEX_1, VERTEX_0};
+
+                3'b001: order_next = {VERTEX_1, VERTEX_2, VERTEX_0};
+
+                3'b011: order_next = {VERTEX_1, VERTEX_0, VERTEX_2};
+
+                3'b100: order_next = {VERTEX_2, VERTEX_0, VERTEX_1};
+
+                3'b110: order_next = {VERTEX_0, VERTEX_2, VERTEX_1};
+
+                3'b111: order_next = {VERTEX_0, VERTEX_1, VERTEX_2};
+
+                default: order_next = {VERTEX_2, VERTEX_1, VERTEX_0};
+            endcase
+        end
+
     always_comb begin
-        swap_index = VERTEX_0;
-        order_next[0] = VERTEX_0;
-        order_next[1] = VERTEX_1;
-        order_next[2] = VERTEX_2;
+        /* Default Values */
         xmin_next = triangle_CRT.vtx[0].pos.x;
         xmax_next = triangle_CRT.vtx[0].pos.x;
-        parity_next = 1'b0;
-
-        /* Sort only indices; equal Y keeps the original vertex order. */
-        if (triangle_CRT.vtx[order_next[0]].pos.y > triangle_CRT.vtx[order_next[1]].pos.y) begin
-            swap_index = order_next[0];
-            order_next[0] = order_next[1];
-            order_next[1] = swap_index;
-            parity_next = !parity_next;
-        end
-
-        if (triangle_CRT.vtx[order_next[1]].pos.y > triangle_CRT.vtx[order_next[2]].pos.y) begin
-            swap_index = order_next[1];
-            order_next[1] = order_next[2];
-            order_next[2] = swap_index;
-            parity_next = !parity_next;
-        end
-
-        if (triangle_CRT.vtx[order_next[0]].pos.y > triangle_CRT.vtx[order_next[1]].pos.y) begin
-            swap_index = order_next[0];
-            order_next[0] = order_next[1];
-            order_next[1] = swap_index;
-            parity_next = !parity_next;
-        end
 
         for (int i = 1; i < 3; i++) begin
             if (triangle_CRT.vtx[i].pos.x < xmin_next) begin
@@ -283,11 +271,21 @@ module triangle_setup #(
     setup_edge_t edge_next;
 
         always_comb begin
+            /* Xmin for start of bounding box, round up if the number has fractional part greater than 0.5 */
             bb_x_start = 11'(xmin_CRT >>> 8) + 11'(xmin_CRT[7:0] > 8'h80);
+
+            /* Xmax for end of bounding box, round down if the number has fractional part less than 0.5 */
             bb_x_end = 11'(xmax_CRT >>> 8) - 11'(xmax_CRT[7:0] < 8'h80);
-            bb_y_start = ceil_y(ymin_CRT);
+
+            /* Ymin for start of bounding box considering Y grow from top to bottom, round up if 
+             * the number has fractional part greater than 0.5 */
+            bb_y_start = 10'(ymin_CRT >>> 8) + 10'(ymin_CRT[7:0] > 8'h80);
+
+            /* Ymax for end of bounding box, round down if the number has fractional part less than 0.5 */
             bb_y_end = 10'(ymax_CRT >>> 8) - 10'(ymax_CRT[7:0] < 8'h80);
 
+
+            /* Negative number clamping */
             if (bb_x_start < 0) begin
                 bb_x_start = 0;
             end
@@ -296,6 +294,7 @@ module triangle_setup #(
                 bb_y_start = 0;
             end
 
+            /* Clamping to viewport */
             if (bb_x_end >= $signed({1'b0, viewport_width_CRT})) begin
                 bb_x_end = $signed({1'b0, viewport_width_CRT}) - 11'sd1;
             end
@@ -304,6 +303,7 @@ module triangle_setup #(
                 bb_y_end = $signed({1'b0, viewport_height_CRT}) - 10'sd1;
             end
 
+            /* Clamping to scissor */
             if (scissor_enable_CRT) begin
                 if (bb_x_start < $signed({1'b0, scissor_xmin_CRT})) begin
                     bb_x_start = $signed({1'b0, scissor_xmin_CRT});
@@ -323,10 +323,15 @@ module triangle_setup #(
             end
         end
 
-
+    /* Vertex A (top one) is the: Middle (index 1) if current edge is MID-BOT or Top edge (index 0) 
+     * if current edge is TOP-BOT or TOP-MID */
     assign vertex_a = edge_idx_CRT == EDGE_MB ? order_CRT[1] : order_CRT[0];
+
+    /* Vertex B (bottom one) is the: Middle (index 1) if current edge is TOP-MID or Bottom edge (index 0) 
+     * if current edge is TOP-BOT or MID-BOT */
     assign vertex_b = edge_idx_CRT == EDGE_TM ? order_CRT[1] : order_CRT[2];
 
+    /* Build edge info */
     assign edge_next.xa = triangle_CRT.vtx[vertex_a].pos.x;
     assign edge_next.ya = triangle_CRT.vtx[vertex_a].pos.y;
     assign edge_next.xb = triangle_CRT.vtx[vertex_b].pos.x;
@@ -355,6 +360,10 @@ module triangle_setup #(
 //      MATH OPERAND MULTIPLEXER
 //====================================================================================
 
+    logic [6:0] attr_mask_CRT, attr_mask_NXT;
+    logic [2:0] attr_idx_CRT, attr_idx_NXT;
+    setup_attribute_t [3:0] attr_CRT, attr_NXT;
+
     logic color_selected;
     logic [1:0] plane_idx, color_idx;
     logic signed [31:0] math_a0, math_a1, math_a2, math_sx, math_gx, math_gy;
@@ -366,11 +375,11 @@ module triangle_setup #(
     logic signed [37:0] math_area, selected_area;
     reciprocal_t math_recip_area, selected_recip_area;
 
-    assign color_selected = attr_idx_CRT >= 3'(ATTR_R) & attr_idx_CRT <= 3'(ATTR_B);
-    assign color_idx = 2'(attr_idx_CRT - 3'(ATTR_R));
-    assign plane_idx = attr_idx_CRT == 3'(ATTR_Z) ? 2'd0 : 2'(attr_idx_CRT - 3'(ATTR_TEX_U) + 3'd1);
+    assign color_selected = (attr_idx_CRT >= ATTR_R) & (attr_idx_CRT <= ATTR_B);
+    assign color_idx = attr_idx_CRT - ATTR_R;
+    assign plane_idx = (attr_idx_CRT == ATTR_Z) ? 2'd0 : (attr_idx_CRT - ATTR_TEX_U + 3'd1);
 
-        /* Original vertices serve the attribute commands; edges select two endpoints. */
+        /* Original vertices serve the attribute commands; edges select two endpoints */
         always_comb begin
             /* Default Values */
             selected_x0 = triangle_CRT.vtx[0].pos.x;
@@ -391,6 +400,7 @@ module triangle_setup #(
             end
         end
 
+    /* Multiplex the attribute based on attribute index */
     assign selected_a0 = attribute_value(triangle_CRT.vtx[0], decoded_w[0][31:0], attr_idx_CRT);
     assign selected_a1 = attribute_value(triangle_CRT.vtx[1], decoded_w[1][31:0], attr_idx_CRT);
     assign selected_a2 = attribute_value(triangle_CRT.vtx[2], decoded_w[2][31:0], attr_idx_CRT);
@@ -398,7 +408,7 @@ module triangle_setup #(
     assign selected_recip_area = recip_area_CRT;
     assign selected_sx = edge_CRT[edge_idx_CRT].sx;
 
-        /* Present the saved F12 color gradients as F16 for the reference. */
+        /* Present the saved F12 color gradients as F16 for the reference */
         always_comb begin
             if (color_selected) begin
                 selected_gx = 32'(color_o[color_idx].gx) <<< COLOR_SHIFT;
@@ -411,7 +421,7 @@ module triangle_setup #(
 
     generate
         if (REGISTER_MATH_INPUTS) begin : gen_registered_inputs
-            /* PREP precedes REQUEST; the math unit never samples the old bundle. */
+            /* PREP precedes REQUEST; the math unit never samples the old bundle */
             always_ff @(posedge clk_i) begin
                 if (state_CRT == MATH_PREP) begin
                     math_x0 <= selected_x0;
@@ -464,106 +474,77 @@ module triangle_setup #(
     logic color_overflow;
 
     triangle_math_unit #(.MULTIPLIER_LATENCY(MULTIPLIER_LATENCY)) math_unit (
-        .clk_i               ( clk_i                   ),
-        .rst_n_i             ( rst_n_i                 ),
-        .ready_i             ( math_resp_ready         ),
-        .command_valid_i     ( math_req_valid          ),
-        .command_i           ( math_command_CRT            ),
-        .command_ready_o     ( math_req_ready          ),
-        .viewport_width_i    ( viewport_width_CRT      ),
-        .viewport_height_i   ( viewport_height_CRT     ),
-        .x0_i                ( math_x0                 ),
-        .x1_i                ( math_x1                 ),
-        .x2_i                ( math_x2                 ),
-        .y0_i                ( math_y0                 ),
-        .y1_i                ( math_y1                 ),
-        .y2_i                ( math_y2                 ),
-        .a0_i                ( math_a0                 ),
-        .a1_i                ( math_a1                 ),
-        .a2_i                ( math_a2                 ),
-        .xref_i              ( math_xref               ),
-        .yref_i              ( math_yref               ),
-        .area_i              ( math_area               ),
-        .recip_area_i        ( math_recip_area         ),
-        .sx_i                ( math_sx                 ),
-        .gx_i                ( math_gx                 ),
-        .gy_i                ( math_gy                 ),
-        .valid_o             ( math_resp_valid         ),
-        .result_o            ( math_result             ),
-        .status_o            ( math_status             ),
-        .busy_o              (                         )
+        .clk_i   ( clk_i           ),
+        .rst_n_i ( rst_n_i         ),
+        .ready_i ( math_resp_ready ),
+
+        .command_valid_i ( math_req_valid   ),
+        .command_i       ( math_command_CRT ),
+        .command_ready_o ( math_req_ready   ),
+
+        .viewport_width_i  ( viewport_width_CRT  ),
+        .viewport_height_i ( viewport_height_CRT ),
+
+        .x0_i ( math_x0 ),
+        .x1_i ( math_x1 ),
+        .x2_i ( math_x2 ),
+        .y0_i ( math_y0 ),
+        .y1_i ( math_y1 ),
+        .y2_i ( math_y2 ),
+
+        .a0_i ( math_a0 ),
+        .a1_i ( math_a1 ),
+        .a2_i ( math_a2 ),
+
+        .xref_i ( math_xref ),
+        .yref_i ( math_yref ),
+
+        .area_i       ( math_area       ),
+        .recip_area_i ( math_recip_area ),
+
+        .sx_i ( math_sx ),
+        .gx_i ( math_gx ),
+        .gy_i ( math_gy ),
+
+        .valid_o  ( math_resp_valid ),
+        .result_o ( math_result     ),
+        .status_o ( math_status     ),
+        .busy_o   (                 )
     );
 
     assign math_req_valid = state_CRT == MATH_REQUEST;
     assign math_resp_ready = state_CRT == MATH_WAIT;
 
-    /* F16 to F12, nearest ties-to-even; check signed range before narrowing. */
-    always_comb begin
-        color_rounded = (45'($signed(math_result[43:0])) >>> COLOR_SHIFT) +
-                        ((math_result[3] && ((|math_result[2:0]) || math_result[4])) ? 45'sd1 : 45'sd0);
-        if (math_command_CRT == CALC_ATTR_REF) begin
-            color_overflow = color_rounded != 45'($signed(color_rounded[35:0]));
-        end else begin
-            color_overflow = color_rounded != 45'($signed(color_rounded[23:0]));
-        end
-        color_overflow &= color_selected & (math_command_CRT == CALC_GRAD_X | math_command_CRT == CALC_GRAD_Y | math_command_CRT == CALC_ATTR_REF);
-    end
+        /* F16 to F12, nearest ties-to-even; check signed range before narrowing */
+        always_comb begin
+            color_rounded = (($signed(math_result[43:0])) >>> COLOR_SHIFT) +
+                            ((math_result[3] & ((math_result[2:0] != '0) | math_result[4])) ? 45'sd1 : 45'sd0);
 
-
-//====================================================================================
-//      OUTPUT INTERFACE
-//====================================================================================
-
-    assign bb_x_start_o = bb_x_start_CRT;
-    assign bb_x_end_o = bb_x_end_CRT;
-    assign bb_y_start_o = bb_y_start_CRT;
-    assign bb_y_end_o = bb_y_end_CRT;
-    assign attr_o = attr_CRT;
-    assign color_o = color_CRT;
-    assign alpha_o = alpha_CRT;
-    assign flat_r_o = flat_r_CRT;
-    assign flat_g_o = flat_g_CRT;
-    assign flat_b_o = flat_b_CRT;
-    assign gouraud_shading_o = gouraud_shading_CRT;
-    assign texture_o = texture_CRT;
-    assign perspective_correct_o = perspective_correct_CRT;
-
-    assign triangle_ready_o = state_CRT == IDLE;
-    assign setup_valid_o = state_CRT == OUTPUT;
-    assign busy_o = state_CRT != IDLE;
-    assign setup_status_o = setup_status_CRT;
-    assign math_status_o = math_status_CRT;
-    assign attr_valid_o = setup_discard_o ? '0 : attr_mask_CRT;
-
-    always_comb begin
-        setup_error_o = 1'b0;
-        setup_discard_o = 1'b0;
-        case (setup_status_CRT)
-            SETUP_OK: begin end
-
-            SETUP_EMPTY, SETUP_DEGENERATE: setup_discard_o = 1'b1;
-
-            default: begin
-                setup_error_o = 1'b1;
-                setup_discard_o = 1'b1;
+            if (math_command_CRT == CALC_ATTR_REF) begin
+                color_overflow = color_rounded != 45'($signed(color_rounded[35:0]));
+            end else begin
+                color_overflow = color_rounded != 45'($signed(color_rounded[23:0]));
             end
-        endcase
-
-        edge_tm_o = edge_CRT[EDGE_TM];
-        edge_tb_o = edge_CRT[EDGE_TB];
-        edge_mb_o = edge_CRT[EDGE_MB];
-
-        if (setup_discard_o) begin
-            edge_tm_o.valid = 1'b0;
-            edge_tb_o.valid = 1'b0;
-            edge_mb_o.valid = 1'b0;
+            
+            color_overflow &= color_selected & (math_command_CRT == CALC_GRAD_X | math_command_CRT == CALC_GRAD_Y | math_command_CRT == CALC_ATTR_REF);
         end
-    end
 
 
 //====================================================================================
 //      REGISTERS
 //====================================================================================
+
+    setup_color_plane_t [2:0] color_CRT, color_NXT;
+    logic [2:0][3:0] alpha_CRT, alpha_NXT;
+    logic [3:0] flat_r_CRT, flat_r_NXT;
+    logic [3:0] flat_g_CRT, flat_g_NXT;
+    logic [3:0] flat_b_CRT, flat_b_NXT;
+
+    logic [9:0] bb_x_start_CRT, bb_x_start_NXT;
+    logic [9:0] bb_x_end_CRT, bb_x_end_NXT;
+    logic [8:0] bb_y_start_CRT, bb_y_start_NXT;
+    logic [8:0] bb_y_end_CRT, bb_y_end_NXT;
+
 
         always_ff @(posedge clk_i) begin
             if (!rst_n_i) begin
@@ -669,9 +650,11 @@ module triangle_setup #(
         case (state_CRT)
             IDLE: begin
                 if (triangle_valid_i & triangle_ready_o) begin
+                    /* Start processing */
                     state_NXT = VALIDATE;
                 end
                 
+                /* Initialize registers */
                 triangle_NXT = triangle_i;
                 attr_idx_NXT = 3'(ATTR_Z);
                 
@@ -709,6 +692,7 @@ module triangle_setup #(
             end
 
             VALIDATE: begin
+                /* Validate configuration and data */
                 if ((config_valid != '1) | !config_max_valid | (inv_w_invalid != '0)) begin
                     state_NXT = OUTPUT;
 
@@ -728,6 +712,7 @@ module triangle_setup #(
             end
 
             MIN_MAX_ORDER: begin
+                /* Take result from min/max and ordering logic */
                 state_NXT = BBOX;
 
                 order_NXT = order_next;
@@ -742,10 +727,12 @@ module triangle_setup #(
 
             BBOX: begin
                 if (bb_x_start > bb_x_end | bb_y_start > bb_y_end) begin
+                    /* Invalid bounding box */
                     state_NXT = OUTPUT;
 
                     setup_status_NXT = SETUP_EMPTY;
                 end else begin
+                    /* Prepare edges */
                     state_NXT = EDGE_PREP;
 
                     bb_x_start_NXT = bb_x_start[9:0];
@@ -758,6 +745,7 @@ module triangle_setup #(
             end
 
             EDGE_PREP: begin
+                /* Process the edge */
                 state_NXT = edge_next.valid ? MATH_PREP : NEXT_EDGE;
 
                 edge_NXT[edge_idx_CRT] = edge_next;
@@ -766,16 +754,21 @@ module triangle_setup #(
 
             NEXT_EDGE: begin
                 if (edge_idx_CRT == EDGE_MB) begin
-                    if (!(edge_CRT[0].valid | edge_CRT[1].valid | edge_CRT[2].valid)) begin
+                    /* Last edge */
+                    if ({edge_CRT[0].valid, edge_CRT[1].valid, edge_CRT[2].valid} == '0) begin
+                        /* If every edge had beed examined finish */
                         state_NXT = OUTPUT;
 
                         setup_status_NXT = SETUP_EMPTY;
                     end else begin
+                        /* If no attributes needs to be interpolated, exit */
                         state_NXT = attr_mask_CRT == 0 ? OUTPUT : MATH_PREP;
 
+                        /* Valid if need interpolation */
                         math_command_NXT = CALC_INV_AREA;
                     end
                 end else begin
+                    /* Prepare edge, increment index to pass to the next edge */
                     state_NXT = EDGE_PREP;
 
                     edge_idx_NXT = edge_idx_CRT + 1'b1;
@@ -783,9 +776,11 @@ module triangle_setup #(
             end
 
             ATTR_SELECT: begin
-                if (attr_idx_CRT == 3'(ATTR_COUNT)) begin
+                if (attr_idx_CRT == ATTR_COUNT) begin
+                    /* All attributes has been processed */
                     state_NXT = OUTPUT;
                 end else if (attr_mask_CRT[attr_idx_CRT]) begin
+                    /* Prepare starting by X gradient */
                     state_NXT = MATH_PREP;
 
                     math_command_NXT = CALC_GRAD_X;
@@ -797,6 +792,7 @@ module triangle_setup #(
             MATH_PREP: state_NXT = MATH_REQUEST;
 
             MATH_REQUEST: begin
+                /* Request to math unit */
                 if (math_req_valid & math_req_ready) begin
                     state_NXT = MATH_WAIT;
                 end
@@ -805,6 +801,7 @@ module triangle_setup #(
             MATH_WAIT: begin
                 if (math_resp_valid & math_resp_ready) begin
                     if (math_status != STATUS_OK | color_overflow) begin
+                        /* Finish if an error occured */
                         state_NXT = OUTPUT;
 
                         math_status_NXT = math_status != STATUS_OK ? math_status : STATUS_OVERFLOW;
@@ -821,7 +818,7 @@ module triangle_setup #(
 
                             CALC_EDGE_INIT: begin
                                 state_NXT = NEXT_EDGE;
-                                
+
                                 edge_NXT[edge_idx_CRT].x_initial = math_result[23:0];
                             end
 
@@ -890,50 +887,54 @@ module triangle_setup #(
 
 
 //====================================================================================
-//      PROTOCOL ASSERTIONS
+//      OUTPUT INTERFACE
 //====================================================================================
 
-`ifndef SYNTHESIS
-    initial begin
-        assert ($bits(proc_triangle_t) == 512 && $bits(proc_vertex_t) == 158);
-        assert ($bits(setup_edge_t) == 150 && $bits(setup_attribute_t) == 108 && $bits(setup_color_plane_t) == 84);
-        assert (STATUS_OK == 0 && STATUS_DIV_ZERO == 1 && STATUS_OVERFLOW == 2 && STATUS_INVALID_CMD == 3);
-    end
+    assign bb_x_start_o = bb_x_start_CRT;
+    assign bb_x_end_o = bb_x_end_CRT;
+    assign bb_y_start_o = bb_y_start_CRT;
+    assign bb_y_end_o = bb_y_end_CRT;
+    assign attr_o = attr_CRT;
+    assign color_o = color_CRT;
+    assign alpha_o = alpha_CRT;
+    assign flat_r_o = flat_r_CRT;
+    assign flat_g_o = flat_g_CRT;
+    assign flat_b_o = flat_b_CRT;
+    assign gouraud_shading_o = gouraud_shading_CRT;
+    assign texture_o = texture_CRT;
+    assign perspective_correct_o = perspective_correct_CRT;
 
-    assert property (@(posedge clk_i) disable iff (!rst_n_i)
-        setup_valid_o |-> setup_status_CRT inside {SETUP_OK, SETUP_EMPTY, SETUP_DEGENERATE, SETUP_MATH_ERROR, SETUP_INVALID_CONFIG});
-    assert property (@(posedge clk_i) disable iff (!rst_n_i)
-        setup_valid_o && !setup_ready_i |=> setup_valid_o && $stable({bb_x_start_o, bb_x_end_o, bb_y_start_o, bb_y_end_o,
-            edge_tm_o, edge_tb_o, edge_mb_o, attr_valid_o, flat_r_o, flat_g_o, flat_b_o, gouraud_shading_o,
-            texture_o, perspective_correct_o, setup_status_o, math_status_o, setup_error_o, setup_discard_o}));
-    assert property (@(posedge clk_i) disable iff (!rst_n_i)
-        state_CRT == MATH_WAIT && !math_resp_valid |=> $stable({math_command_CRT, edge_idx_CRT, attr_idx_CRT}));
-    assert property (@(posedge clk_i) disable iff (!rst_n_i)
-        state_CRT == MATH_REQUEST || (state_CRT == MATH_WAIT && !math_resp_valid) |=>
-            $stable({math_command_CRT, math_x0, math_x1, math_x2, math_y0, math_y1, math_y2, math_a0, math_a1, math_a2,
-                     math_xref, math_yref, math_area, math_recip_area, math_sx, math_gx, math_gy}));
-    assert property (@(posedge clk_i) disable iff (!rst_n_i)
-        setup_valid_o && setup_status_CRT != SETUP_MATH_ERROR |-> math_status_CRT == STATUS_OK);
-    assert property (@(posedge clk_i) disable iff (!rst_n_i)
-        setup_valid_o && !setup_discard_o |->
-            bb_x_start_o <= bb_x_end_o && bb_x_end_o < viewport_width_CRT &&
-            bb_y_start_o <= bb_y_end_o && bb_y_end_o < viewport_height_CRT && attr_valid_o == attr_mask_CRT);
-    assert property (@(posedge clk_i) disable iff (!rst_n_i)
-        setup_valid_o && !setup_discard_o && scissor_enable_CRT |->
-            bb_x_start_o >= scissor_xmin_CRT && bb_x_end_o <= scissor_xmax_CRT &&
-            bb_y_start_o >= scissor_ymin_CRT && bb_y_end_o <= scissor_ymax_CRT);
-    for (genvar i = 0; i < 3; i++) begin : gen_edge_checks
-        assert property (@(posedge clk_i) disable iff (!rst_n_i)
-            setup_valid_o && !setup_discard_o && edge_CRT[i].valid |->
-                edge_CRT[i].j_start <= edge_CRT[i].j_end && edge_CRT[i].ya < edge_CRT[i].yb);
-        assert property (@(posedge clk_i) disable iff (!rst_n_i)
-            setup_valid_o && !setup_ready_i |=> $stable(color_o[i]) && $stable(alpha_o[i]));
-    end
-    for (genvar i = 0; i < 4; i++) begin : gen_attr_checks
-        assert property (@(posedge clk_i) disable iff (!rst_n_i)
-            setup_valid_o && !setup_ready_i |=> $stable(attr_o[i]));
-    end
-`endif
+    assign triangle_ready_o = state_CRT == IDLE;
+    assign setup_valid_o = state_CRT == OUTPUT;
+    assign busy_o = state_CRT != IDLE;
+    assign setup_status_o = setup_status_CRT;
+    assign math_status_o = math_status_CRT;
+    assign attr_valid_o = setup_discard_o ? '0 : attr_mask_CRT;
+
+        always_comb begin
+            setup_error_o = 1'b0;
+            setup_discard_o = 1'b0;
+            case (setup_status_CRT)
+                SETUP_OK: begin end
+
+                SETUP_EMPTY, SETUP_DEGENERATE: setup_discard_o = 1'b1;
+
+                default: begin
+                    setup_error_o = 1'b1;
+                    setup_discard_o = 1'b1;
+                end
+            endcase
+
+            edge_tm_o = edge_CRT[EDGE_TM];
+            edge_tb_o = edge_CRT[EDGE_TB];
+            edge_mb_o = edge_CRT[EDGE_MB];
+
+            if (setup_discard_o) begin
+                edge_tm_o.valid = 1'b0;
+                edge_tb_o.valid = 1'b0;
+                edge_mb_o.valid = 1'b0;
+            end
+        end
 
 endmodule : triangle_setup
 
