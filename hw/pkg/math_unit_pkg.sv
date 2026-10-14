@@ -1,7 +1,7 @@
-`ifndef TRIANGLE_MATH_PKG_SV
-    `define TRIANGLE_MATH_PKG_SV
+`ifndef MATH_UNIT_PKG_SV
+    `define MATH_UNIT_PKG_SV
 
-package triangle_math_pkg;
+package math_unit_pkg;
 
     /* Command sent from triangle setup unit */
     typedef enum logic [2:0] {
@@ -48,6 +48,8 @@ package triangle_math_pkg;
 
     typedef enum logic [2:0] {IDLE, ISSUE, WAIT_RESULT, WRITEBACK, RESPONSE} state_t;
 
-endpackage : triangle_math_pkg
+endpackage : math_unit_pkg
+
+import math_unit_pkg::*;
 
 `endif

@@ -3,6 +3,10 @@
 
 package triangle_pkg;
 
+//====================================================================================
+//      GENERAL TYPES
+//====================================================================================
+
     /* Positive 1/w = (Q1.17 mantissa) * 2^exponent; 24 packed bits. */
     typedef struct packed {
         logic [17:0] mantissa;
@@ -76,6 +80,54 @@ package triangle_pkg;
         logic signed [37:0] area;
         proc_vertex_t [2:0] vtx;
     } proc_triangle_t;
+
+
+//====================================================================================
+//      RASTER TRIANGLE SETUP TYPES
+//====================================================================================
+
+    localparam int unsigned ATTR_COUNT = 7;
+    localparam int unsigned NONCOLOR_COUNT = 4;
+    localparam int unsigned COLOR_COUNT = 3;
+
+    localparam int unsigned ATTR_Z = 0;
+    localparam int unsigned ATTR_R = 1;
+    localparam int unsigned ATTR_G = 2;
+    localparam int unsigned ATTR_B = 3;
+    localparam int unsigned ATTR_TEX_U = 4;
+    localparam int unsigned ATTR_TEX_V = 5;
+    localparam int unsigned ATTR_INV_W = 6;
+
+    /* Inclusive pixel rows; slope/initial X use F12, original endpoints F8. */
+    typedef struct packed {
+        logic valid;
+        logic is_left;
+        logic [8:0] j_start, j_end;
+        logic signed [31:0] sx;
+        logic signed [23:0] x_initial;
+        logic signed [18:0] xa, xb;
+        logic signed [17:0] ya, yb;
+    } setup_edge_t;
+
+    /* Z, u/w, v/w and decoded 1/w: signed F16. */
+    typedef struct packed {
+        logic signed [31:0] gx, gy;
+        logic signed [43:0] aref;
+    } setup_attribute_t;
+
+    /* RGB444 planes in signed F12, retaining range outside the triangle. */
+    typedef struct packed {
+        logic signed [23:0] gx, gy;
+        logic signed [35:0] aref;
+    } setup_color_plane_t;
+
+    typedef enum logic [2:0] {
+        SETUP_OK = 3'b000,
+        SETUP_EMPTY = 3'b001,
+        SETUP_DEGENERATE = 3'b010,
+        SETUP_MATH_ERROR = 3'b011,
+        SETUP_INVALID_CONFIG = 3'b100
+    } setup_status_t;
 
 endpackage : triangle_pkg
 
