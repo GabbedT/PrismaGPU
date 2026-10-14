@@ -2,7 +2,6 @@
     `define TRIANGLE_SETUP_SV
 
 module triangle_setup #(
-    parameter bit REGISTER_MATH_INPUTS = 1'b0,
     parameter int MULTIPLIER_LATENCY = 0
 ) (
     input logic clk_i,
@@ -13,7 +12,7 @@ module triangle_setup #(
     output logic triangle_ready_o,
     input proc_triangle_t triangle_i,
 
-    /* Interpolation */
+    /* Shared rendering configuration; stable until the pipeline is drained */
     input logic gouraud_shading_i,
     input logic texture_i,
     input logic perspective_correct_i,
@@ -57,11 +56,6 @@ module triangle_setup #(
     output logic [3:0] flat_g_o,
     output logic [3:0] flat_b_o,
 
-    /* Rendering */
-    output logic gouraud_shading_o,
-    output logic texture_o,
-    output logic perspective_correct_o,
-
     /* Status */
     output setup_status_t setup_status_o,
     output status_t math_status_o,
@@ -69,7 +63,6 @@ module triangle_setup #(
     output logic setup_discard_o,
     output logic busy_o
 );
-
 
 //====================================================================================
 //      PARAMETERS AND FUNCTIONS
@@ -152,33 +145,20 @@ module triangle_setup #(
 
     proc_triangle_t triangle_CRT, triangle_NXT;
 
-    logic [9:0] viewport_width_CRT, viewport_width_NXT;
-    logic [8:0] viewport_height_CRT, viewport_height_NXT;
-
-    logic scissor_enable_CRT, scissor_enable_NXT;
-    logic [9:0] scissor_xmin_CRT, scissor_xmin_NXT;
-    logic [9:0] scissor_xmax_CRT, scissor_xmax_NXT;
-    logic [8:0] scissor_ymin_CRT, scissor_ymin_NXT;
-    logic [8:0] scissor_ymax_CRT, scissor_ymax_NXT;
-
     setup_edge_t [2:0] edge_CRT, edge_NXT;
     logic [1:0] edge_idx_CRT, edge_idx_NXT;
     logic [2:0][1:0] order_CRT, order_NXT;
     reciprocal_t recip_area_CRT, recip_area_NXT;
     logic parity_CRT, parity_NXT;
 
-    logic gouraud_shading_CRT, gouraud_shading_NXT;
-    logic texture_CRT, texture_NXT;
-    logic perspective_correct_CRT, perspective_correct_NXT;
-
     logic config_max_valid;
     logic [2:0] config_valid, inv_w_invalid, inv_w_range;
     logic [2:0][47:0] decoded_w_CRT, decoded_w_NXT;
 
     /* Check validity withing max viewport coordinates */
-    assign config_max_valid = (viewport_width_CRT > 0) & (viewport_width_CRT <= 640) &
-                              (viewport_height_CRT > 0) & (viewport_height_CRT <= 480) & 
-                             !(texture_o & !perspective_correct_o);
+    assign config_max_valid = (viewport_width_i > 0) & (viewport_width_i <= 640) &
+                              (viewport_height_i > 0) & (viewport_height_i <= 480) &
+                             !(texture_i & !perspective_correct_i);
 
     always_comb begin
         /* Default Values */
@@ -187,11 +167,11 @@ module triangle_setup #(
 
         for (int i = 0; i < 3; i++) begin
             /* Check coordinates validity against current viewport */
-            config_valid[i] = (triangle_CRT.vtx[i].pos.x >= 0) & (triangle_CRT.vtx[i].pos.x <= $signed({1'b0, viewport_width_CRT, 8'b0})) &
-                              (triangle_CRT.vtx[i].pos.y >= 0) & (triangle_CRT.vtx[i].pos.y <= $signed({1'b0, viewport_height_CRT, 8'b0}));
+            config_valid[i] = (triangle_CRT.vtx[i].pos.x >= 0) & (triangle_CRT.vtx[i].pos.x <= $signed({1'b0, viewport_width_i, 8'b0})) &
+                              (triangle_CRT.vtx[i].pos.y >= 0) & (triangle_CRT.vtx[i].pos.y <= $signed({1'b0, viewport_height_i, 8'b0}));
             
             /* Check W validity */
-            if (texture_o & perspective_correct_o) begin
+            if (texture_i & perspective_correct_i) begin
                 inv_w_invalid[i] = triangle_CRT.vtx[i].pos.w.mantissa == 0;
                 inv_w_range[i] = (decoded_w_CRT[i] == 0) | (decoded_w_CRT[i] > 48'h7fffffff);
             end
@@ -292,30 +272,30 @@ module triangle_setup #(
             end
 
             /* Clamping to viewport */
-            if (bb_x_end >= $signed({1'b0, viewport_width_CRT})) begin
-                bb_x_end = $signed({1'b0, viewport_width_CRT}) - 11'sd1;
+            if (bb_x_end >= $signed({1'b0, viewport_width_i})) begin
+                bb_x_end = $signed({1'b0, viewport_width_i}) - 11'sd1;
             end
 
-            if (bb_y_end >= $signed({1'b0, viewport_height_CRT})) begin
-                bb_y_end = $signed({1'b0, viewport_height_CRT}) - 10'sd1;
+            if (bb_y_end >= $signed({1'b0, viewport_height_i})) begin
+                bb_y_end = $signed({1'b0, viewport_height_i}) - 10'sd1;
             end
 
             /* Clamping to scissor */
-            if (scissor_enable_CRT) begin
-                if (bb_x_start < $signed({1'b0, scissor_xmin_CRT})) begin
-                    bb_x_start = $signed({1'b0, scissor_xmin_CRT});
+            if (scissor_enable_i) begin
+                if (bb_x_start < $signed({1'b0, scissor_xmin_i})) begin
+                    bb_x_start = $signed({1'b0, scissor_xmin_i});
                 end
 
-                if (bb_x_end > $signed({1'b0, scissor_xmax_CRT})) begin
-                    bb_x_end = $signed({1'b0, scissor_xmax_CRT});
+                if (bb_x_end > $signed({1'b0, scissor_xmax_i})) begin
+                    bb_x_end = $signed({1'b0, scissor_xmax_i});
                 end
 
-                if (bb_y_start < $signed({1'b0, scissor_ymin_CRT})) begin
-                    bb_y_start = $signed({1'b0, scissor_ymin_CRT});
+                if (bb_y_start < $signed({1'b0, scissor_ymin_i})) begin
+                    bb_y_start = $signed({1'b0, scissor_ymin_i});
                 end
 
-                if (bb_y_end > $signed({1'b0, scissor_ymax_CRT})) begin
-                    bb_y_end = $signed({1'b0, scissor_ymax_CRT});
+                if (bb_y_end > $signed({1'b0, scissor_ymax_i})) begin
+                    bb_y_end = $signed({1'b0, scissor_ymax_i});
                 end
             end
         end
@@ -357,7 +337,7 @@ module triangle_setup #(
 //      MATH OPERAND MULTIPLEXER
 //====================================================================================
 
-    logic [6:0] attr_mask_CRT, attr_mask_NXT;
+    logic [6:0] attr_mask;
     logic [2:0] attr_idx_CRT, attr_idx_NXT;
     setup_attribute_t [3:0] attr_CRT, attr_NXT;
 
@@ -416,48 +396,27 @@ module triangle_setup #(
             end
         end
 
-    generate
-        if (REGISTER_MATH_INPUTS) begin : gen_registered_inputs
-            /* PREP precedes REQUEST; the math unit never samples the old bundle */
-            always_ff @(posedge clk_i) begin
-                if (state_CRT == MATH_PREP) begin
-                    math_x0 <= selected_x0;
-                    math_x1 <= selected_x1;
-                    math_x2 <= selected_x2;
-                    math_y0 <= selected_y0;
-                    math_y1 <= selected_y1;
-                    math_y2 <= selected_y2;
-                    math_a0 <= selected_a0;
-                    math_a1 <= selected_a1;
-                    math_a2 <= selected_a2;
-                    math_xref <= selected_xref;
-                    math_yref <= selected_yref;
-                    math_area <= selected_area;
-                    math_recip_area <= selected_recip_area;
-                    math_sx <= selected_sx;
-                    math_gx <= selected_gx;
-                    math_gy <= selected_gy;
-                end
+        /* PREP precedes REQUEST; the math unit never samples the old bundle */
+        always_ff @(posedge clk_i) begin
+            if (state_CRT == MATH_PREP) begin
+                math_x0 <= selected_x0;
+                math_x1 <= selected_x1;
+                math_x2 <= selected_x2;
+                math_y0 <= selected_y0;
+                math_y1 <= selected_y1;
+                math_y2 <= selected_y2;
+                math_a0 <= selected_a0;
+                math_a1 <= selected_a1;
+                math_a2 <= selected_a2;
+                math_xref <= selected_xref;
+                math_yref <= selected_yref;
+                math_area <= selected_area;
+                math_recip_area <= selected_recip_area;
+                math_sx <= selected_sx;
+                math_gx <= selected_gx;
+                math_gy <= selected_gy;
             end
-        end else begin : gen_direct_inputs
-            assign math_x0 = selected_x0;
-            assign math_x1 = selected_x1;
-            assign math_x2 = selected_x2;
-            assign math_y0 = selected_y0;
-            assign math_y1 = selected_y1;
-            assign math_y2 = selected_y2;
-            assign math_a0 = selected_a0;
-            assign math_a1 = selected_a1;
-            assign math_a2 = selected_a2;
-            assign math_xref = selected_xref;
-            assign math_yref = selected_yref;
-            assign math_area = selected_area;
-            assign math_recip_area = selected_recip_area;
-            assign math_sx = selected_sx;
-            assign math_gx = selected_gx;
-            assign math_gy = selected_gy;
         end
-    endgenerate
 
 
 //====================================================================================
@@ -479,8 +438,8 @@ module triangle_setup #(
         .command_i       ( math_command_CRT ),
         .command_ready_o ( math_req_ready   ),
 
-        .viewport_width_i  ( viewport_width_CRT  ),
-        .viewport_height_i ( viewport_height_CRT ),
+        .viewport_width_i  ( viewport_width_i  ),
+        .viewport_height_i ( viewport_height_i ),
 
         .x0_i ( math_x0 ),
         .x1_i ( math_x1 ),
@@ -508,6 +467,8 @@ module triangle_setup #(
         .status_o ( math_status     ),
         .busy_o   (                 )
     );
+
+    assign attr_mask = {{3{texture_i & perspective_correct_i}}, {3{gouraud_shading_i}}, z_interpolation_i};
 
     assign math_req_valid = state_CRT == MATH_REQUEST;
     assign math_resp_ready = state_CRT == MATH_WAIT;
@@ -561,16 +522,6 @@ module triangle_setup #(
                 triangle_CRT <= triangle_NXT;
                 decoded_w_CRT <= decoded_w_NXT;
 
-                viewport_width_CRT <= viewport_width_NXT;
-                viewport_height_CRT <= viewport_height_NXT;
-
-                scissor_enable_CRT <= scissor_enable_NXT;
-                scissor_xmin_CRT <= scissor_xmin_NXT;
-                scissor_xmax_CRT <= scissor_xmax_NXT;
-                scissor_ymin_CRT <= scissor_ymin_NXT;
-                scissor_ymax_CRT <= scissor_ymax_NXT;
-                
-                attr_mask_CRT <= attr_mask_NXT;
                 edge_CRT <= edge_NXT;
                 recip_area_CRT <= recip_area_NXT;
                 edge_idx_CRT <= edge_idx_NXT;
@@ -595,10 +546,6 @@ module triangle_setup #(
                 flat_r_CRT <= flat_r_NXT;
                 flat_g_CRT <= flat_g_NXT;
                 flat_b_CRT <= flat_b_NXT;
-
-                gouraud_shading_CRT <= gouraud_shading_NXT;
-                texture_CRT <= texture_NXT;
-                perspective_correct_CRT <= perspective_correct_NXT;
             end
         end
 
@@ -614,14 +561,6 @@ module triangle_setup #(
         math_command_NXT = math_command_CRT;
         triangle_NXT = triangle_CRT;
         decoded_w_NXT = decoded_w_CRT;
-        viewport_width_NXT = viewport_width_CRT;
-        viewport_height_NXT = viewport_height_CRT;
-        scissor_enable_NXT = scissor_enable_CRT;
-        scissor_xmin_NXT = scissor_xmin_CRT;
-        scissor_xmax_NXT = scissor_xmax_CRT;
-        scissor_ymin_NXT = scissor_ymin_CRT;
-        scissor_ymax_NXT = scissor_ymax_CRT;
-        attr_mask_NXT = attr_mask_CRT;
         edge_NXT = edge_CRT;
         recip_area_NXT = recip_area_CRT;
         edge_idx_NXT = edge_idx_CRT;
@@ -642,9 +581,6 @@ module triangle_setup #(
         flat_r_NXT = flat_r_CRT;
         flat_g_NXT = flat_g_CRT;
         flat_b_NXT = flat_b_CRT;
-        gouraud_shading_NXT = gouraud_shading_CRT;
-        texture_NXT = texture_CRT;
-        perspective_correct_NXT = perspective_correct_CRT;
 
         case (state_CRT)
             IDLE: begin
@@ -656,25 +592,10 @@ module triangle_setup #(
                 /* Initialize registers */
                 triangle_NXT = triangle_i;
                 attr_idx_NXT = 3'(ATTR_Z);
-                
-                viewport_width_NXT = viewport_width_i;
-                viewport_height_NXT = viewport_height_i;
-                
-                scissor_enable_NXT = scissor_enable_i;
-                scissor_xmin_NXT = scissor_xmin_i;
-                scissor_xmax_NXT = scissor_xmax_i;
-                scissor_ymin_NXT = scissor_ymin_i;
-                scissor_ymax_NXT = scissor_ymax_i;
-                
-                gouraud_shading_NXT = gouraud_shading_i;
-                texture_NXT = texture_i;
-                perspective_correct_NXT = texture_i & perspective_correct_i;
 
                 flat_r_NXT = triangle_i.vtx[0].col.r;
                 flat_g_NXT = triangle_i.vtx[0].col.g;
                 flat_b_NXT = triangle_i.vtx[0].col.b;
-
-                attr_mask_NXT = { {3{texture_i & perspective_correct_i}}, {3{gouraud_shading_i}}, z_interpolation_i };
 
                 setup_status_NXT = SETUP_OK;
                 math_status_NXT = STATUS_OK;
@@ -775,7 +696,7 @@ module triangle_setup #(
                         setup_status_NXT = SETUP_EMPTY;
                     end else begin
                         /* If no attributes needs to be interpolated, exit */
-                        state_NXT = attr_mask_CRT == 0 ? OUTPUT : MATH_PREP;
+                        state_NXT = attr_mask == 0 ? OUTPUT : MATH_PREP;
 
                         /* Valid if need interpolation */
                         math_command_NXT = CALC_INV_AREA;
@@ -792,7 +713,7 @@ module triangle_setup #(
                 if (attr_idx_CRT == ATTR_COUNT) begin
                     /* All attributes has been processed */
                     state_NXT = OUTPUT;
-                end else if (attr_mask_CRT[attr_idx_CRT]) begin
+                end else if (attr_mask[attr_idx_CRT]) begin
                     /* Prepare starting by X gradient */
                     state_NXT = MATH_PREP;
 
@@ -913,16 +834,13 @@ module triangle_setup #(
     assign flat_r_o = flat_r_CRT;
     assign flat_g_o = flat_g_CRT;
     assign flat_b_o = flat_b_CRT;
-    assign gouraud_shading_o = gouraud_shading_CRT;
-    assign texture_o = texture_CRT;
-    assign perspective_correct_o = perspective_correct_CRT;
 
     assign triangle_ready_o = state_CRT == IDLE;
     assign setup_valid_o = state_CRT == OUTPUT;
     assign busy_o = state_CRT != IDLE;
     assign setup_status_o = setup_status_CRT;
     assign math_status_o = math_status_CRT;
-    assign attr_valid_o = setup_discard_o ? '0 : attr_mask_CRT;
+    assign attr_valid_o = setup_discard_o ? '0 : attr_mask;
 
         always_comb begin
             setup_error_o = 1'b0;
