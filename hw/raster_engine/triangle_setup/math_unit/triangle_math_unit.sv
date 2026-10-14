@@ -143,7 +143,7 @@ module triangle_math_unit #(
     logic signed [87:0] t0, t1, t2, out_data;
     command_t command_reg;
     logic [2:0] micro_pc;
-    state_t state;
+    state_t state_CRT, state_NXT;
     microinstruction_t instruction;
     logic program_valid;
 
@@ -327,8 +327,8 @@ module triangle_math_unit #(
         .div_zero_o     ( recip_div_zero       )
     );
 
-    assign recip_req_valid = (state == ISSUE) & (instruction.op == RECIP) & !issue_error;
-    assign recip_resp_ready = (state == WRITEBACK) & (instruction.op == RECIP);
+    assign recip_req_valid = (state_CRT == ISSUE) & (instruction.op == RECIP) & !issue_error;
+    assign recip_resp_ready = (state_CRT == WAIT_RESULT) & (instruction.op == RECIP);
 
 
 //====================================================================================
@@ -384,19 +384,23 @@ module triangle_math_unit #(
         end
 
     triangle_multiply_unit #(.LATENCY(MULTIPLIER_LATENCY)) multiplier_unit (
-        .clk_i(clk_i),
-        .rst_n_i(rst_n_i),
-        .req_valid_i(mul_req_valid),
-        .req_ready_o(mul_req_ready),
-        .operand_a_i(mul_a_wide[53:0]),
-        .operand_b_i(mul_b_wide[32:0]),
-        .resp_valid_o (mul_resp_valid),
-        .resp_ready_i (mul_resp_ready),
-        .product_o(mul_product)
+        .clk_i   ( clk_i   ),
+        .rst_n_i ( rst_n_i ),
+
+        .req_valid_i ( mul_req_valid ),
+        .req_ready_o ( mul_req_ready ),
+
+        .operand_a_i ( mul_a_wide[53:0] ),
+        .operand_b_i ( mul_b_wide[32:0] ),
+
+        .resp_valid_o ( mul_resp_valid ),
+        .resp_ready_i ( mul_resp_ready ),
+
+        .product_o ( mul_product )
     );
 
-    assign mul_req_valid = (state == ISSUE) & (instruction.op == MUL) & !issue_error;
-    assign mul_resp_ready = (state == WRITEBACK) & (instruction.op == MUL);
+    assign mul_req_valid = (state_CRT == ISSUE) & (instruction.op == MUL) & !issue_error;
+    assign mul_resp_ready = (state_CRT == WAIT_RESULT) & (instruction.op == MUL);
 
 
 //====================================================================================
@@ -427,28 +431,61 @@ module triangle_math_unit #(
 //      RESULT MULTIPLEXER
 //====================================================================================
 
-    logic signed [87:0] write_data, raw_result, scaled_result;
-    logic signed [88:0] rounded_result;
-    logic conversion_error, guard_bit, sticky_bit;
-    status_t write_status;
-    integer shift_count, output_width;
+    logic signed [87:0] write_data, raw_result, raw_result_next, scaled_result, shifted_result;
+    logic signed [88:0] rounded_result, converted_result;
+    logic conversion_error, converted_error, guard_bit, sticky_bit;
+    logic round_increment;
+    status_t raw_status, raw_status_next, write_status;
+    logic signed [8:0] shift_count;
+    integer output_width;
 
 
-    always_comb begin
-        raw_result = '0;
+        always_comb begin
+            raw_result_next = '0;
+            raw_status_next = STATUS_OK;
 
-        case (instruction.op)
-            ADD, SUB: raw_result = add_result[87:0];
-            MUL: raw_result = {mul_product[86], mul_product};
-            RECIP: raw_result = {47'b0, recip_result};
-        endcase
+            case (instruction.op)
+                ADD, SUB: begin
+                    raw_result_next = add_result[87:0];
 
-        if (instruction.last == LAST_OP &&
-            (command_reg == CALC_SLOPE || command_reg == CALC_GRAD_X || command_reg == CALC_GRAD_Y) &&
-            active_reciprocal.negative) begin
-            raw_result = -raw_result;
+                    if (add_result[88] != add_result[87]) begin
+                        raw_status_next = STATUS_OVERFLOW;
+                    end
+                end
+
+                MUL: raw_result_next = {mul_product[86], mul_product};
+
+                RECIP: begin
+                    raw_result_next = {47'b0, recip_result};
+
+                    if (recip_div_zero) begin
+                        raw_status_next = STATUS_DIV_ZERO;
+                    end
+                end
+            endcase
+
+            if (instruction.last == LAST_OP &&
+                (command_reg == CALC_SLOPE || command_reg == CALC_GRAD_X || command_reg == CALC_GRAD_Y) &&
+                active_reciprocal.negative) begin
+                raw_result_next = -raw_result_next;
+            end
         end
-    end
+
+        /* Capture arithmetic before conversion. The instruction stays unchanged
+        until WRITEBACK, including while a multicycle unit is busy. */
+        always_ff @(posedge clk_i) begin
+            if (!rst_n_i) begin
+                raw_result <= '0;
+                raw_status <= STATUS_OK;
+            end else if (state_CRT == ISSUE & !issue_error & (instruction.op == ADD | instruction.op == SUB)) begin
+                raw_result <= raw_result_next;
+                raw_status <= raw_status_next;
+            end else if (state_CRT == WAIT_RESULT &
+                        ((instruction.op == MUL & mul_resp_valid) | (instruction.op == RECIP & recip_resp_valid))) begin
+                raw_result <= raw_result_next;
+                raw_status <= raw_status_next;
+            end
+        end
 
 
 //====================================================================================
@@ -463,17 +500,17 @@ module triangle_math_unit #(
         if (instruction.last == LAST_OP) begin
             case (command_reg)
                 CALC_SLOPE, CALC_GRAD_X, CALC_GRAD_Y: begin
-                    shift_count = (command_reg == CALC_SLOPE ? SLOPE_RECIP_SHIFT : GRAD_RECIP_SHIFT) - int'($signed(active_reciprocal.exponent));
+                    shift_count = (command_reg == CALC_SLOPE ? 9'(SLOPE_RECIP_SHIFT) : 9'(GRAD_RECIP_SHIFT)) - 9'($signed(active_reciprocal.exponent));
                     output_width = 32;
                 end
 
                 CALC_EDGE_INIT: begin
-                    shift_count = FINAL_SHIFT;
+                    shift_count = 9'(FINAL_SHIFT);
                     output_width = 24;
                 end
 
                 CALC_ATTR_REF: begin
-                    shift_count = FINAL_SHIFT;
+                    shift_count = 9'(FINAL_SHIFT);
                     output_width = 44;
                 end
             endcase
@@ -509,7 +546,7 @@ module triangle_math_unit #(
                 guard_bit = raw_result[shift_count - 1];
 
                 for (int i = 0; i < 87; i++) begin
-                    if (i < shift_count-1) begin
+                    if (shift_count > 9'(i + 1)) begin
                         sticky_bit |= raw_result[i];
                     end
                 end
@@ -526,26 +563,21 @@ module triangle_math_unit #(
                 scaled_result = '0;
             end else begin
                 scaled_result = raw_result <<< (-shift_count);
-                /* Reverse the shift to detect sign or magnitude bits lost at
-                 * the accumulator boundary before checking the output format. */
-                conversion_error = (scaled_result >>> (-shift_count)) != raw_result;
+                /* Discarded bits and the new sign bit must match the old sign. */
+                for (int i = 0; i < 87; i++) begin
+                    if (shift_count <= 9'(i - 87)) begin
+                        conversion_error |= raw_result[i] != raw_result[87];
+                    end
+                end
             end
         end
 
     end
 
         always_comb begin
-            write_status = STATUS_OK;
-            
-            if ((instruction.op == ADD || instruction.op == SUB) && add_result[88] != add_result[87]) begin
-                write_status = STATUS_OVERFLOW;
-            end
+            write_status = raw_status;
 
-            if (instruction.op == RECIP && recip_div_zero) begin
-                write_status = STATUS_DIV_ZERO;
-            end
-
-            if (conversion_error || rounded_result[88] != rounded_result[87] || !fits(write_data, output_width)) begin
+            if (converted_error || converted_result[88] != converted_result[87] || !fits(write_data, output_width)) begin
                 write_status = STATUS_OVERFLOW;
             end
 
@@ -556,69 +588,61 @@ module triangle_math_unit #(
 
     /* Round up when discarded bits are above half, or exactly half with an
      * odd retained result. This also selects the even value on negative ties. */
-    assign rounded_result = {scaled_result[87], scaled_result} + ((guard_bit && (sticky_bit || scaled_result[0])) ? 89'd1 : 89'd0);
-    assign write_data = rounded_result[87:0];
+    assign rounded_result = {shifted_result[87], shifted_result} + (round_increment ? 89'd1 : 89'd0);
+    assign write_data = converted_result[87:0];
+
+        /* Register the shift and rounding decision before the increment. */
+        always_ff @(posedge clk_i) begin
+            if (!rst_n_i) begin
+                shifted_result <= '0;
+                round_increment <= 1'b0;
+                converted_result <= '0;
+                converted_error <= 1'b0;
+            end else if (state_CRT == CONVERT) begin
+                shifted_result <= scaled_result;
+                round_increment <= guard_bit && (sticky_bit || scaled_result[0]);
+                converted_error <= conversion_error;
+            end else if (state_CRT == ROUND) begin
+                converted_result <= rounded_result;
+            end
+        end
 
 
 //====================================================================================
-//      FSM STATE CONTROL
+//      FSM STATE_CRT CONTROL
 //====================================================================================
 
-    assign command_ready_o = state == IDLE;
-    assign valid_o = state == RESPONSE;
-    assign busy_o = state != IDLE;
+    assign command_ready_o = state_CRT == IDLE;
+    assign valid_o = state_CRT == RESPONSE;
+    assign busy_o = state_CRT != IDLE;
     assign result_o = out_data;
 
-    always_ff @(posedge clk_i) begin
-        if (!rst_n_i) begin
-            state <= IDLE;
-            command_reg <= CALC_INV_AREA;
-            micro_pc <= '0;
-            status_o <= STATUS_OK;
-            out_data <= '0;
-        end else begin
-            case (state)
+        always_comb begin
+            state_NXT = state_CRT;
+
+            case (state_CRT)
                 IDLE: begin
                     if (command_valid_i & command_ready_o) begin
-                        if (command_i > CALC_ATTR_REF) begin
-                            /* Invalid command */
-                            out_data <= '0;
-                            status_o <= STATUS_INVALID_CMD;
-                            state <= RESPONSE;
-                        end else if (!coordinates_valid) begin
-                            /* Coordinates too big */
-                            out_data <= '0;
-                            status_o <= STATUS_OVERFLOW;
-                            state <= RESPONSE;
-                        end else begin
-                            command_reg <= command_i;
-                            micro_pc <= '0;
-                            status_o <= STATUS_OK;
-                            state <= ISSUE;
-                        end
+                        state_NXT = command_i > CALC_ATTR_REF || !coordinates_valid ? RESPONSE : ISSUE;
                     end
                 end
 
                 ISSUE: begin
                     if (issue_error) begin
-                        out_data <= '0;
-                        status_o <= program_valid ? STATUS_OVERFLOW : STATUS_INVALID_CMD;
-                        state <= RESPONSE;
+                        state_NXT = RESPONSE;
                     end else begin
                         case (instruction.op)
-                            ADD, SUB: state <= WRITEBACK;
+                            ADD, SUB: state_NXT = CONVERT;
 
-                            /* As it's multicycle */
                             MUL: begin
                                 if (mul_req_ready) begin
-                                    state <= WAIT_RESULT;
+                                    state_NXT = WAIT_RESULT;
                                 end
                             end
 
-                            /* As it's multicycle */
                             RECIP: begin
                                 if (recip_req_ready) begin
-                                    state <= WAIT_RESULT;
+                                    state_NXT = WAIT_RESULT;
                                 end
                             end
                         endcase
@@ -627,48 +651,94 @@ module triangle_math_unit #(
 
                 WAIT_RESULT: begin
                     if ((instruction.op == MUL & mul_resp_valid) | (instruction.op == RECIP & recip_resp_valid)) begin
-                        state <= WRITEBACK;
+                        state_NXT = CONVERT;
                     end
                 end
 
+                CONVERT: state_NXT = ROUND;
+
+                ROUND: state_NXT = WRITEBACK;
+
                 WRITEBACK: begin
-                    if (write_status != STATUS_OK) begin
-                        out_data <= '0;
-                        status_o <= write_status;
-                        state <= RESPONSE;
-                    end else begin
-                        /* Register write */
-                        case (instruction.dst)
-                            DST_T0: t0 <= write_data;
-
-                            DST_T1: t1 <= write_data;
-
-                            DST_T2: t2 <= write_data;
-
-                            DST_OUT: out_data <= write_data;
-                        endcase
-
-                        if (instruction.last == LAST_OP) begin
-                            state <= RESPONSE;
-                        end else begin
-                            state <= ISSUE;
-
-                            /* Increment if next instruction is valid */
-                            micro_pc <= micro_pc + 1'b1;
-                        end
-                    end
+                    state_NXT = write_status != STATUS_OK || instruction.last == LAST_OP ? RESPONSE : ISSUE;
                 end
 
                 RESPONSE: begin
                     if (ready_i) begin
-                        state <= IDLE;
+                        state_NXT = IDLE;
                     end
                 end
 
-                default: state <= IDLE;
+                default: state_NXT = IDLE;
             endcase
         end
-    end
+
+        always_ff @(posedge clk_i) begin
+            if (!rst_n_i) begin
+                state_CRT <= IDLE;
+            end else begin
+                state_CRT <= state_NXT;
+            end
+        end
+
+        always_ff @(posedge clk_i) begin
+            if (!rst_n_i) begin
+                command_reg <= CALC_INV_AREA;
+                micro_pc <= '0;
+                status_o <= STATUS_OK;
+                out_data <= '0;
+            end else begin
+                case (state_CRT)
+                    IDLE: begin
+                        if (command_valid_i & command_ready_o) begin
+                            if (command_i > CALC_ATTR_REF) begin
+                                /* Invalid command */
+                                out_data <= '0;
+                                status_o <= STATUS_INVALID_CMD;
+                            end else if (!coordinates_valid) begin
+                                /* Coordinates too big */
+                                out_data <= '0;
+                                status_o <= STATUS_OVERFLOW;
+                            end else begin
+                                command_reg <= command_i;
+                                micro_pc <= '0;
+                                status_o <= STATUS_OK;
+                            end
+                        end
+                    end
+
+                    ISSUE: begin
+                        if (issue_error) begin
+                            out_data <= '0;
+                            status_o <= program_valid ? STATUS_OVERFLOW : STATUS_INVALID_CMD;
+                        end
+                    end
+
+                    WRITEBACK: begin
+                        if (write_status != STATUS_OK) begin
+                            out_data <= '0;
+                            status_o <= write_status;
+                        end else begin
+                            /* Register write */
+                            case (instruction.dst)
+                                DST_T0: t0 <= write_data;
+
+                                DST_T1: t1 <= write_data;
+
+                                DST_T2: t2 <= write_data;
+
+                                DST_OUT: out_data <= write_data;
+                            endcase
+
+                            if (instruction.last == MORE_OPS) begin
+                                /* Increment if next instruction is valid */
+                                micro_pc <= micro_pc + 1'b1;
+                            end
+                        end
+                    end
+                endcase
+            end
+        end
 
 endmodule : triangle_math_unit
 

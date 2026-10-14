@@ -46,7 +46,7 @@ package math_unit_pkg;
         STATUS_OK, STATUS_DIV_ZERO, STATUS_OVERFLOW, STATUS_INVALID_CMD
     } status_t;
 
-    typedef enum logic [2:0] {IDLE, ISSUE, WAIT_RESULT, WRITEBACK, RESPONSE} state_t;
+    typedef enum logic [2:0] {IDLE, ISSUE, WAIT_RESULT, CONVERT, ROUND, WRITEBACK, RESPONSE} state_t;
 
 endpackage : math_unit_pkg
 

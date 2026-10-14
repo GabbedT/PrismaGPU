@@ -80,7 +80,7 @@ module triangle_setup #(
     localparam int COLOR_SHIFT = 4;
 
     typedef enum logic [3:0] {
-        IDLE, VALIDATE, MIN_MAX_ORDER, BBOX, EDGE_PREP, NEXT_EDGE,
+        IDLE, W_CONVERT, VALIDATE, MIN_MAX_ORDER, BBOX, BBOX_CHECK, EDGE_PREP, EDGE_CHECK, NEXT_EDGE,
         ATTR_SELECT, MATH_PREP, MATH_REQUEST, MATH_WAIT, OUTPUT
     } setup_state_t;
 
@@ -93,20 +93,20 @@ module triangle_setup #(
     function automatic logic [47:0] decode_w(input inv_w_t value);
         logic [47:0] result;
         logic guard_bit, sticky_bit;
-        integer shift_count;
+        logic signed [6:0] shift_count;
 
         /* Default Values */
         result = {30'b0, value.mantissa};
         guard_bit = 1'b0;
         sticky_bit = 1'b0;
-        shift_count = 1 - int'($signed(value.exponent));
+        shift_count = 7'sd1 - 7'($signed(value.exponent));
 
         if (shift_count > 0) begin
             result = result >> shift_count;
             if (shift_count <= 18) begin
                 guard_bit = value.mantissa[shift_count - 1];
                 for (int i = 0; i < 18; i++) begin
-                    if (i < shift_count - 1) begin
+                    if (shift_count > 7'(i + 1)) begin
                         sticky_bit |= value.mantissa[i];
                     end
                 end
@@ -173,7 +173,7 @@ module triangle_setup #(
 
     logic config_max_valid;
     logic [2:0] config_valid, inv_w_invalid, inv_w_range;
-    logic [2:0][47:0] decoded_w;
+    logic [2:0][47:0] decoded_w_CRT, decoded_w_NXT;
 
     /* Check validity withing max viewport coordinates */
     assign config_max_valid = (viewport_width_CRT > 0) & (viewport_width_CRT <= 640) &
@@ -186,9 +186,6 @@ module triangle_setup #(
         inv_w_range = 3'b0;
 
         for (int i = 0; i < 3; i++) begin
-            /* Convert to F16 format */
-            decoded_w[i] = decode_w(triangle_CRT.vtx[i].pos.w);
-
             /* Check coordinates validity against current viewport */
             config_valid[i] = (triangle_CRT.vtx[i].pos.x >= 0) & (triangle_CRT.vtx[i].pos.x <= $signed({1'b0, viewport_width_CRT, 8'b0})) &
                               (triangle_CRT.vtx[i].pos.y >= 0) & (triangle_CRT.vtx[i].pos.y <= $signed({1'b0, viewport_height_CRT, 8'b0}));
@@ -196,7 +193,7 @@ module triangle_setup #(
             /* Check W validity */
             if (texture_o & perspective_correct_o) begin
                 inv_w_invalid[i] = triangle_CRT.vtx[i].pos.w.mantissa == 0;
-                inv_w_range[i] = (decoded_w[i] == 0) | (decoded_w[i] > 48'h7fffffff);
+                inv_w_range[i] = (decoded_w_CRT[i] == 0) | (decoded_w_CRT[i] > 48'h7fffffff);
             end
         end
     end
@@ -401,9 +398,9 @@ module triangle_setup #(
         end
 
     /* Multiplex the attribute based on attribute index */
-    assign selected_a0 = attribute_value(triangle_CRT.vtx[0], decoded_w[0][31:0], attr_idx_CRT);
-    assign selected_a1 = attribute_value(triangle_CRT.vtx[1], decoded_w[1][31:0], attr_idx_CRT);
-    assign selected_a2 = attribute_value(triangle_CRT.vtx[2], decoded_w[2][31:0], attr_idx_CRT);
+    assign selected_a0 = attribute_value(triangle_CRT.vtx[0], decoded_w_CRT[0][31:0], attr_idx_CRT);
+    assign selected_a1 = attribute_value(triangle_CRT.vtx[1], decoded_w_CRT[1][31:0], attr_idx_CRT);
+    assign selected_a2 = attribute_value(triangle_CRT.vtx[2], decoded_w_CRT[2][31:0], attr_idx_CRT);
     assign selected_area = triangle_CRT.area;
     assign selected_recip_area = recip_area_CRT;
     assign selected_sx = edge_CRT[edge_idx_CRT].sx;
@@ -540,10 +537,10 @@ module triangle_setup #(
     logic [3:0] flat_g_CRT, flat_g_NXT;
     logic [3:0] flat_b_CRT, flat_b_NXT;
 
-    logic [9:0] bb_x_start_CRT, bb_x_start_NXT;
-    logic [9:0] bb_x_end_CRT, bb_x_end_NXT;
-    logic [8:0] bb_y_start_CRT, bb_y_start_NXT;
-    logic [8:0] bb_y_end_CRT, bb_y_end_NXT;
+    logic signed [10:0] bb_x_start_CRT, bb_x_start_NXT;
+    logic signed [10:0] bb_x_end_CRT, bb_x_end_NXT;
+    logic signed [9:0] bb_y_start_CRT, bb_y_start_NXT;
+    logic signed [9:0] bb_y_end_CRT, bb_y_end_NXT;
 
 
         always_ff @(posedge clk_i) begin
@@ -562,6 +559,7 @@ module triangle_setup #(
             if (rst_n_i) begin
                 math_command_CRT <= math_command_NXT;
                 triangle_CRT <= triangle_NXT;
+                decoded_w_CRT <= decoded_w_NXT;
 
                 viewport_width_CRT <= viewport_width_NXT;
                 viewport_height_CRT <= viewport_height_NXT;
@@ -615,6 +613,7 @@ module triangle_setup #(
         math_status_NXT = math_status_CRT;
         math_command_NXT = math_command_CRT;
         triangle_NXT = triangle_CRT;
+        decoded_w_NXT = decoded_w_CRT;
         viewport_width_NXT = viewport_width_CRT;
         viewport_height_NXT = viewport_height_CRT;
         scissor_enable_NXT = scissor_enable_CRT;
@@ -651,7 +650,7 @@ module triangle_setup #(
             IDLE: begin
                 if (triangle_valid_i & triangle_ready_o) begin
                     /* Start processing */
-                    state_NXT = VALIDATE;
+                    state_NXT = W_CONVERT;
                 end
                 
                 /* Initialize registers */
@@ -691,6 +690,14 @@ module triangle_setup #(
                 end
             end
 
+            W_CONVERT: begin
+                state_NXT = VALIDATE;
+
+                for (int i = 0; i < 3; i++) begin
+                    decoded_w_NXT[i] = decode_w(triangle_CRT.vtx[i].pos.w);
+                end
+            end
+
             VALIDATE: begin
                 /* Validate configuration and data */
                 if ((config_valid != '1) | !config_max_valid | (inv_w_invalid != '0)) begin
@@ -726,7 +733,16 @@ module triangle_setup #(
             end
 
             BBOX: begin
-                if (bb_x_start > bb_x_end | bb_y_start > bb_y_end) begin
+                state_NXT = BBOX_CHECK;
+
+                bb_x_start_NXT = bb_x_start;
+                bb_x_end_NXT = bb_x_end;
+                bb_y_start_NXT = bb_y_start;
+                bb_y_end_NXT = bb_y_end;
+            end
+
+            BBOX_CHECK: begin
+                if (bb_x_start_CRT > bb_x_end_CRT | bb_y_start_CRT > bb_y_end_CRT) begin
                     /* Invalid bounding box */
                     state_NXT = OUTPUT;
 
@@ -735,22 +751,19 @@ module triangle_setup #(
                     /* Prepare edges */
                     state_NXT = EDGE_PREP;
 
-                    bb_x_start_NXT = bb_x_start[9:0];
-                    bb_x_end_NXT = bb_x_end[9:0];
-                    bb_y_start_NXT = bb_y_start[8:0];
-                    bb_y_end_NXT = bb_y_end[8:0];
-
                     edge_idx_NXT = EDGE_TM;
                 end
             end
 
             EDGE_PREP: begin
                 /* Process the edge */
-                state_NXT = edge_next.valid ? MATH_PREP : NEXT_EDGE;
+                state_NXT = EDGE_CHECK;
 
                 edge_NXT[edge_idx_CRT] = edge_next;
                 math_command_NXT = CALC_SLOPE;
             end
+
+            EDGE_CHECK: state_NXT = edge_CRT[edge_idx_CRT].valid ? MATH_PREP : NEXT_EDGE;
 
             NEXT_EDGE: begin
                 if (edge_idx_CRT == EDGE_MB) begin
@@ -890,10 +903,10 @@ module triangle_setup #(
 //      OUTPUT INTERFACE
 //====================================================================================
 
-    assign bb_x_start_o = bb_x_start_CRT;
-    assign bb_x_end_o = bb_x_end_CRT;
-    assign bb_y_start_o = bb_y_start_CRT;
-    assign bb_y_end_o = bb_y_end_CRT;
+    assign bb_x_start_o = bb_x_start_CRT[9:0];
+    assign bb_x_end_o = bb_x_end_CRT[9:0];
+    assign bb_y_start_o = bb_y_start_CRT[8:0];
+    assign bb_y_end_o = bb_y_end_CRT[8:0];
     assign attr_o = attr_CRT;
     assign color_o = color_CRT;
     assign alpha_o = alpha_CRT;
