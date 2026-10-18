@@ -434,11 +434,14 @@ module triangle_math_unit #(
     logic signed [87:0] write_data, raw_result, raw_result_next, scaled_result, shifted_result;
     logic signed [88:0] rounded_result, converted_result;
     logic conversion_error, converted_error, guard_bit, sticky_bit;
-    logic round_increment;
+    logic round_increment, conversion_needed, capture_result;
     status_t raw_status, raw_status_next, write_status;
     logic signed [8:0] shift_count;
     integer output_width;
 
+    assign conversion_needed = instruction.last == LAST_OP & command_reg != CALC_INV_AREA;
+    assign capture_result = (state_CRT == ISSUE & !issue_error & (instruction.op == ADD | instruction.op == SUB)) |
+                            (state_CRT == WAIT_RESULT & ((instruction.op == MUL & mul_resp_valid) | (instruction.op == RECIP & recip_resp_valid)));
 
         always_comb begin
             raw_result_next = '0;
@@ -477,11 +480,7 @@ module triangle_math_unit #(
             if (!rst_n_i) begin
                 raw_result <= '0;
                 raw_status <= STATUS_OK;
-            end else if (state_CRT == ISSUE & !issue_error & (instruction.op == ADD | instruction.op == SUB)) begin
-                raw_result <= raw_result_next;
-                raw_status <= raw_status_next;
-            end else if (state_CRT == WAIT_RESULT &
-                        ((instruction.op == MUL & mul_resp_valid) | (instruction.op == RECIP & recip_resp_valid))) begin
+            end else if (capture_result) begin
                 raw_result <= raw_result_next;
                 raw_status <= raw_status_next;
             end
@@ -598,6 +597,10 @@ module triangle_math_unit #(
                 round_increment <= 1'b0;
                 converted_result <= '0;
                 converted_error <= 1'b0;
+            end else if (capture_result & !conversion_needed) begin
+                /* No scale change: preserve the full result and check it in WRITEBACK. */
+                converted_result <= {raw_result_next[87], raw_result_next};
+                converted_error <= 1'b0;
             end else if (state_CRT == CONVERT) begin
                 shifted_result <= scaled_result;
                 round_increment <= guard_bit && (sticky_bit || scaled_result[0]);
@@ -632,7 +635,7 @@ module triangle_math_unit #(
                         state_NXT = RESPONSE;
                     end else begin
                         case (instruction.op)
-                            ADD, SUB: state_NXT = CONVERT;
+                            ADD, SUB: state_NXT = conversion_needed ? CONVERT : WRITEBACK;
 
                             MUL: begin
                                 if (mul_req_ready) begin
@@ -651,7 +654,7 @@ module triangle_math_unit #(
 
                 WAIT_RESULT: begin
                     if ((instruction.op == MUL & mul_resp_valid) | (instruction.op == RECIP & recip_resp_valid)) begin
-                        state_NXT = CONVERT;
+                        state_NXT = conversion_needed ? CONVERT : WRITEBACK;
                     end
                 end
 
