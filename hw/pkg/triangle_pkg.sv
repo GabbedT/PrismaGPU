@@ -109,13 +109,15 @@ package triangle_pkg;
         logic signed [17:0] ya, yb;
     } setup_edge_t;
 
-    /* Z, u/w, v/w and decoded 1/w: signed F16. */
+    /* Z, u/w, v/w and decoded 1/w: signed F16.
+     * aref is evaluated at (bb_x_start + 0.5, bb_y_start + 0.5). */
     typedef struct packed {
         logic signed [31:0] gx, gy;
         logic signed [43:0] aref;
     } setup_attribute_t;
 
-    /* RGB444 planes in signed F12, retaining range outside the triangle. */
+    /* RGB444 planes in signed F12, retaining range outside the triangle.
+     * aref uses the same bounding-box sample center as the F16 planes. */
     typedef struct packed {
         logic signed [23:0] gx, gy;
         logic signed [35:0] aref;
