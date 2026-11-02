@@ -1,6 +1,7 @@
 ../pkg/triangle_pkg.sv
 ../pkg/math_unit_pkg.sv
 ../pkg/texturizer_pkg.sv
+../pkg/pixel_blender_pkg.sv
 
 ../common/reciprocal_lut.sv
 
@@ -21,3 +22,5 @@ z_test/z_tester.sv
 texturizer/texture_coordinate.sv
 texturizer/texel_memory.sv
 texturizer/texturizer.sv
+
+pixel_blender/pixel_blender.sv
