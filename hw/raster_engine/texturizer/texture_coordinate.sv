@@ -70,7 +70,7 @@ module texture_coordinate (
     );
         logic [SHIFTED_WIDTH:0] rounded;
 
-        rounded = {1'b0, magnitude} + (SHIFTED_WIDTH + 1)'(guard_bit & (sticky_bit | magnitude[0]));
+        rounded = {1'b0, magnitude} + {{SHIFTED_WIDTH{1'b0}}, (guard_bit & (sticky_bit | magnitude[0]))};
         
         if (negative) begin
             if (rounded >= NEGATIVE_LIMIT) begin
