@@ -163,13 +163,13 @@ module pixel_interpolator (
                 /* Bubbles hold the accumulators; valid pixels advance X by one */
                 for (int i = 0; i < 4; i++) begin
                     if (attr_enable[i]) begin
-                        attr_acc_NXT[i] = $signed(attr_acc_CRT[i]) + attr_CRT[i].gx;
+                        attr_acc_NXT[i] = $signed(attr_acc_CRT[i]) + 44'($signed(attr_CRT[i].gx));
                     end
                 end
 
                 for (int i = 0; i < 3; i++) begin
                     if (color_enable[i]) begin
-                        color_acc_NXT[i] = $signed(color_acc_CRT[i]) + color_CRT[i].gx;
+                        color_acc_NXT[i] = $signed(color_acc_CRT[i]) + 36'($signed(color_CRT[i].gx));
                     end
                 end
             end

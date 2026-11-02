@@ -1,9 +1,12 @@
 `ifndef PIXEL_RASTERIZER_SV
     `define PIXEL_RASTERIZER_SV
 
-module pixel_rasterizer (
+module pixel_rasterizer #(
+    parameter bit SPAN_ONLY = 1'b0
+) (
     input logic clk_i,
     input logic rst_n_i,
+    input logic stall_i,
 
     /* From/To setup stage */
     input logic start_i,
@@ -24,7 +27,12 @@ module pixel_rasterizer (
 
     /* First span coordinates, one cycle before its first valid pixel */
     output logic new_line_o,
-    output logic pixel_valid_o
+    output logic pixel_valid_o,
+
+    /* In SPAN_ONLY mode, new_line_o transfers an inclusive span on !stall_i.
+     * done_o follows all nonempty spans, including draws with no samples. */
+    output logic [9:0] span_x_end_o,
+    output logic done_o
 );
 
 
@@ -71,7 +79,7 @@ module pixel_rasterizer (
                 x_left_CRT <= '0;
                 x_right_CRT <= '0;
                 edge_CRT <= '0;
-            end else begin
+            end else if (!stall_i) begin
                 state_CRT <= state_NXT;
                 couple_CRT <= couple_NXT;
                 x_index_CRT <= x_index_NXT;
@@ -122,11 +130,13 @@ module pixel_rasterizer (
             pixel_y_o = '0;
             new_line_o = 1'b0;
             pixel_valid_o = 1'b0;
+            span_x_end_o = '0;
+            done_o = 1'b0;
 
             case (state_CRT)
                 IDLE: begin
                     /* Request triangle to setup unit */
-                    request_o = rst_n_i;
+                    request_o = !stall_i;
 
                     if (start_i && request_o) begin
                         couple_NXT = TB_TM;
@@ -209,7 +219,7 @@ module pixel_rasterizer (
                 end
                 
                 X_LOOP_SETUP: begin
-                    state_NXT = RASTER_PIXEL;
+                    state_NXT = SPAN_ONLY ? INCREMENT_Y : RASTER_PIXEL;
                     
                     /* Restart the pixel offset for each row */
                     x_index_NXT = '0;
@@ -225,6 +235,7 @@ module pixel_rasterizer (
                         /* Initialize interpolation before the first pixel */
                         pixel_x_o = 10'(x_start_NXT);
                         pixel_y_o = 9'({1'b0, y_start_CRT} + y_index_CRT);
+                        span_x_end_o = 10'(x_end_NXT);
                         
                         new_line_o = 1'b1;
                     end
@@ -280,6 +291,7 @@ module pixel_rasterizer (
 
                 RASTER_END: begin
                     state_NXT = IDLE;
+                    done_o = 1'b1;
                 end
 
                 default: begin

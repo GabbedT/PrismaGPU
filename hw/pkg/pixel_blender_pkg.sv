@@ -14,4 +14,6 @@ package pixel_blender_pkg;
 
 endpackage : pixel_blender_pkg
 
+import pixel_blender_pkg::*;
+
 `endif

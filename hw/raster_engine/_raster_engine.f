@@ -2,6 +2,7 @@
 ../pkg/math_unit_pkg.sv
 ../pkg/texturizer_pkg.sv
 ../pkg/pixel_blender_pkg.sv
+../pkg/raster_config_pkg.sv
 
 ../common/reciprocal_lut.sv
 
@@ -24,3 +25,5 @@ texturizer/texel_memory.sv
 texturizer/texturizer.sv
 
 pixel_blender/pixel_blender.sv
+
+pixel_raster_pipeline.sv

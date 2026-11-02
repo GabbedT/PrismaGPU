@@ -61,7 +61,7 @@ module triangle_reciprocal (
 
     assign multiplier_b = state_CRT == PRODUCT_MX ? m : correction;
     assign correction_full = (69'd2 << 64) - {1'b0, product};
-    assign rounded_product = product[65:32] + 34'(product[31] & ((|product[30:0]) | product[32]));
+    assign rounded_product = product[65:32] + {33'b0, (product[31] & ((|product[30:0]) | product[32]))};
     assign req_ready_o = state_CRT == R_IDLE;
     assign resp_valid_o = state_CRT == R_RESPONSE;
 
@@ -139,14 +139,14 @@ module triangle_reciprocal (
                 end
 
                 CORRECTION: begin
-                    correction <= correction_full[65:32] + 34'(correction_full[31] & ((|correction_full[30:0]) | correction_full[32]));
+                    correction <= correction_full[65:32] + {33'b0, (correction_full[31] & ((|correction_full[30:0]) | correction_full[32]))};
                 end
 
                 UPDATE_X: begin
                     x <= rounded_product;
                     
                     if (iteration == 2'(NEWTON_STEPS-1)) begin
-                        result_o.mantissa <= rounded_product[33:2] + 32'(rounded_product[1] & (rounded_product[0] | rounded_product[2]));
+                        result_o.mantissa <= rounded_product[33:2] + {31'b0, (rounded_product[1] & (rounded_product[0] | rounded_product[2]))};
                     end else begin
                         iteration <= iteration + 1'b1;
                     end

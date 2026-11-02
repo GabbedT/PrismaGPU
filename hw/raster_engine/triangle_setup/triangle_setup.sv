@@ -313,14 +313,14 @@ module triangle_setup #(
     assign edge_next.ya = triangle_CRT.vtx[vertex_a].pos.y;
     assign edge_next.xb = triangle_CRT.vtx[vertex_b].pos.x;
     assign edge_next.yb = triangle_CRT.vtx[vertex_b].pos.y;
-    assign edge_next.valid = edge_next.ya < edge_next.yb & edge_start <= edge_end;
+    assign edge_next.valid = (triangle_CRT.vtx[vertex_a].pos.y < triangle_CRT.vtx[vertex_b].pos.y) & (edge_start <= edge_end);
     assign edge_next.j_start = edge_start[8:0];
     assign edge_next.j_end = edge_end[8:0];
     assign edge_next.is_left = (triangle_CRT.area[37] ^ parity_CRT) ^ (edge_idx_CRT == EDGE_TB);
 
         always_comb begin
-            edge_start = ceil_y(edge_next.ya);
-            edge_end = ceil_y(edge_next.yb) - 10'sd1;
+            edge_start = ceil_y(triangle_CRT.vtx[vertex_a].pos.y);
+            edge_end = ceil_y(triangle_CRT.vtx[vertex_b].pos.y) - 10'sd1;
 
             if (edge_start < $signed({1'b0, bb_y_start_o})) begin
                 edge_start = $signed({1'b0, bb_y_start_o});
@@ -352,9 +352,9 @@ module triangle_setup #(
     logic signed [37:0] math_area, selected_area;
     reciprocal_t math_recip_area, selected_recip_area;
 
-    assign color_selected = (attr_idx_CRT >= ATTR_R) & (attr_idx_CRT <= ATTR_B);
-    assign color_idx = attr_idx_CRT - ATTR_R;
-    assign plane_idx = (attr_idx_CRT == ATTR_Z) ? 2'd0 : (attr_idx_CRT - ATTR_TEX_U + 3'd1);
+    assign color_selected = (attr_idx_CRT >= 3'(ATTR_R)) & (attr_idx_CRT <= 3'(ATTR_B));
+    assign color_idx = 2'(attr_idx_CRT - 3'(ATTR_R));
+    assign plane_idx = (attr_idx_CRT == 3'(ATTR_Z)) ? 2'd0 : 2'(attr_idx_CRT - 3'(ATTR_TEX_U) + 3'd1);
 
         /* Original vertices serve the attribute commands; edges select two endpoints */
         always_comb begin
@@ -475,7 +475,7 @@ module triangle_setup #(
 
         /* F16 to F12, nearest ties-to-even; check signed range before narrowing */
         always_comb begin
-            color_rounded = (($signed(math_result[43:0])) >>> COLOR_SHIFT) +
+            color_rounded = (45'($signed(math_result[43:0])) >>> COLOR_SHIFT) +
                             ((math_result[3] & ((math_result[2:0] != '0) | math_result[4])) ? 45'sd1 : 45'sd0);
 
             if (math_command_CRT == CALC_ATTR_REF) begin
@@ -710,7 +710,7 @@ module triangle_setup #(
             end
 
             ATTR_SELECT: begin
-                if (attr_idx_CRT == ATTR_COUNT) begin
+                if (attr_idx_CRT == 3'(ATTR_COUNT)) begin
                     /* All attributes has been processed */
                     state_NXT = OUTPUT;
                 end else if (attr_mask[attr_idx_CRT]) begin
