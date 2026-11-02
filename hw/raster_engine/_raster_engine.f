@@ -11,3 +11,8 @@ triangle_setup/triangle_setup.sv
 pixel_rasterizer/pixel_rasterizer.sv
 
 pixel_interpolator/pixel_interpolator.sv
+
+z_test/z_buffer_line.sv
+z_test/z_buffer_controller.sv
+z_test/depth_tester.sv
+z_test/z_tester.sv
