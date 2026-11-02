@@ -1,5 +1,6 @@
 ../pkg/triangle_pkg.sv
 ../pkg/math_unit_pkg.sv
+../pkg/texturizer_pkg.sv
 
 ../common/reciprocal_lut.sv
 
@@ -16,3 +17,7 @@ z_test/z_buffer_line.sv
 z_test/z_buffer_controller.sv
 z_test/depth_tester.sv
 z_test/z_tester.sv
+
+texturizer/texture_coordinate.sv
+texturizer/texel_memory.sv
+texturizer/texturizer.sv
