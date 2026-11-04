@@ -14,7 +14,7 @@ module pixel_interpolator (
     input logic perspective_correct_i,
     input logic z_interpolation_i,
 
-    /* Reference pixel indices; stable until this triangle is drained */
+    /* X reference stays stable through interpolation; Y is captured on start_i. */
     input logic [9:0] bb_x_start_i,
     input logic [8:0] bb_y_start_i,
 

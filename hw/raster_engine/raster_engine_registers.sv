@@ -8,6 +8,7 @@ module raster_engine_registers (
 
     /* Control; command outputs are one-cycle pulses for the external controller. */
     output logic enable_o,
+    output logic passthrough_o,
     output logic start_processing_o,
     output logic stop_processing_o,
     output logic soft_reset_o,
@@ -116,7 +117,9 @@ module raster_engine_registers (
     /* Keep config_o and memory bounds stable while the controller is busy.
      * CTRL and IRQ access remain available. Value validation belongs to the
      * pipeline/controller; bus errors do not create rendering error IRQs. */
-    assign write_blocked = configuration_write & busy_i;
+    assign write_blocked = (configuration_write & busy_i) |
+                           ((write_address == RE_CTRL) & write_strobe_i[0] &
+                            (write_data_i[0][4] != passthrough_o) & (busy_i | paused_i));
     assign read_address_valid = (read_address <= RE_VP_CFG) |
                                 ((read_address >= RE_SCISSOR_X) & (read_address <= RE_FRMBUF_END)) |
                                 ((read_address >= RE_TRI_INPUT) & (read_address <= RE_CYCLES));
@@ -142,6 +145,7 @@ module raster_engine_registers (
             if (write_register & (write_address == RE_CTRL)) begin
                 if (write_strobe_i[0]) begin
                     control_register.enable <= write_data_i[0][0];
+                    control_register.passthrough <= write_data_i[0][4];
                     control_register.start_processing <= write_data_i[0][1];
                     control_register.stop_processing <= write_data_i[0][2];
                     control_register.soft_reset <= write_data_i[0][3];
@@ -162,6 +166,7 @@ module raster_engine_registers (
     end
 
     assign enable_o = control_register.enable;
+    assign passthrough_o = control_register.passthrough;
     assign start_processing_o = control_register.start_processing;
     assign stop_processing_o = control_register.stop_processing;
     assign soft_reset_o = control_register.soft_reset;
@@ -366,7 +371,9 @@ module raster_engine_registers (
             RE_STATUS: read_data_o = status_register;
             
             RE_FRMBUF_BEGIN: read_data_o = framebuffer_base;
+            
             RE_FRMBUF_END: read_data_o = framebuffer_end;
+            
             RE_CMD_BASE: read_data_o = command_buffer_base;
             
             RE_CMD_END: read_data_o = command_buffer_end;

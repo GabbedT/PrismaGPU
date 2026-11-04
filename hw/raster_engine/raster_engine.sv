@@ -5,6 +5,14 @@ module raster_engine (
     input logic clk_i,
     input logic rst_n_i,
     output logic interrupt_o,
+    output logic busy_o,
+    output logic done_o,
+
+    /* Direct GE input, selected by RE_CTRL.passthrough. */
+    input proc_triangle_t raster_triangle_i,
+    input logic raster_valid_i,
+    output logic raster_stall_o,
+    input logic stream_end_i,
 
     /* Register write; word offsets */
     input logic register_write_i,
@@ -28,7 +36,7 @@ module raster_engine (
 //      CONTROL AND CONFIGURATION
 //====================================================================================
 
-    logic enable, start, stop, soft_reset, count_enable;
+    logic enable, start, stop, soft_reset, count_enable, passthrough;
     logic [31:0] cmd_base, cmd_end;
     logic [31:0] prim_base, prim_end;
     logic [31:0] z_buffer_base, z_buffer_end;
@@ -60,7 +68,8 @@ module raster_engine (
 //      PIPELINE INTERFACES
 //====================================================================================
 
-    proc_triangle_t triangle;
+    proc_triangle_t triangle, memory_triangle;
+    logic memory_primitive_valid, memory_primitive_ready;
     logic triangle_valid, triangle_stall;
     logic pipe_busy, pipe_done, pipe_error, pipe_discard;
     logic pipe_abort, pipe_reset_n, pipe_z_reject;
@@ -80,6 +89,14 @@ module raster_engine (
     logic [8:0] pixel_y;
     logic pixel_valid, pixel_ready;
     assign pipe_reset_n = rst_n_i && !pipe_abort;
+    assign busy_o = busy;
+    assign done_o = done;
+
+    /* Only the selected producer sees acceptance. No extra triangle storage. */
+    assign triangle = passthrough ? raster_triangle_i : memory_triangle;
+    assign primitive_valid = passthrough ? raster_valid_i : memory_primitive_valid;
+    assign memory_primitive_ready = !passthrough & primitive_ready;
+    assign raster_stall_o = !rst_n_i | !passthrough | !primitive_ready;
 
 
 //====================================================================================
@@ -91,6 +108,7 @@ module raster_engine (
         .rst_n_i                    ( rst_n_i                  ),
         .interrupt_o                ( interrupt_o              ),
         .enable_o                   ( enable                   ),
+        .passthrough_o              ( passthrough              ),
         .start_processing_o         ( start                    ),
         .stop_processing_o          ( stop                     ),
         .soft_reset_o               ( soft_reset               ),
@@ -146,6 +164,8 @@ module raster_engine (
         .start_i               ( start                           ),
         .stop_i                ( stop                            ),
         .soft_reset_i          ( soft_reset                      ),
+        .passthrough_i         ( passthrough                     ),
+        .stream_end_i          ( stream_end_i                    ),
         .command_base_i        ( cmd_base                        ),
         .command_end_i         ( cmd_end                         ),
         .primitive_base_i      ( prim_base                       ),
@@ -233,9 +253,9 @@ module raster_engine (
         .primitive_pointer_o     ( prim_ptr               ),
         .draw_start_i            ( draw_start             ),
         .draw_count_i            ( draw_count             ),
-        .primitive_o             ( triangle               ),
-        .primitive_valid_o       ( primitive_valid        ),
-        .primitive_ready_i       ( primitive_ready        ),
+        .primitive_o             ( memory_triangle        ),
+        .primitive_valid_o       ( memory_primitive_valid ),
+        .primitive_ready_i       ( memory_primitive_ready ),
         .texture_start_i         ( texture_start          ),
         .texture_address_i       ( texture_source_address ),
         .texture_done_o          ( texture_done           ),

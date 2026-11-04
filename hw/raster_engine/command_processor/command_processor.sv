@@ -10,6 +10,9 @@ module command_processor (
     input logic start_i,
     input logic stop_i,
     input logic soft_reset_i,
+    input logic passthrough_i,
+    /* Hold high after the final primitive until DONE; gaps do not end a stream. */
+    input logic stream_end_i,
 
     /* Memory ranges */
     input logic [31:0] command_base_i,
@@ -91,12 +94,12 @@ module command_processor (
     typedef enum logic [4:0] {
         IDLE, INITIALIZE, RESUME,
         FETCH, DECODE,
-        DRAW_START, DRAW_RUN, TRIANGLE_DRAIN,
+        DRAW_START, DRAW_RUN, DRAW_DRAIN,
         TEXTURE_START, TEXTURE_WAIT,
         CLEAR_REQUEST, CLEAR_WAIT,
         COMMIT, NOTIFY_DRAIN, NOTIFY_COMMIT, NOTIFY_REPORT,
         PAUSE_DRAIN, END_DRAIN, PAUSED, DONE,
-        ERROR_DRAIN, ERROR_HALT, RESET_DRAIN
+        ERROR_DRAIN, ERROR_HALT, RESET_DRAIN, STREAM_RUN
     } state_t;
 
     state_t state_CRT, state_NXT;
@@ -104,9 +107,9 @@ module command_processor (
     logic discard_memory_CRT, discard_memory_NXT;
     logic command_active_CRT, command_active_NXT;
     logic list_loaded_CRT, list_loaded_NXT;
-    logic triangle_active_CRT, triangle_active_NXT;
     logic pause_requested_CRT, pause_requested_NXT;
     logic [27:0] remaining_CRT, remaining_NXT;
+    logic [1:0] pending_CRT, pending_NXT;
     logic [31:0] saved_command_base_CRT, saved_command_base_NXT;
     logic [31:0] saved_command_end_CRT, saved_command_end_NXT;
     logic [31:0] saved_primitive_base_CRT, saved_primitive_base_NXT;
@@ -122,7 +125,6 @@ module command_processor (
             discard_memory_CRT <= 1'b0;
             command_active_CRT <= 1'b0;
             list_loaded_CRT <= 1'b0;
-            triangle_active_CRT <= 1'b0;
             pause_requested_CRT <= 1'b0;
             command_error_CRT <= 1'b0;
             config_error_CRT <= 1'b0;
@@ -133,7 +135,6 @@ module command_processor (
             discard_memory_CRT <= discard_memory_NXT;
             command_active_CRT <= command_active_NXT;
             list_loaded_CRT <= list_loaded_NXT;
-            triangle_active_CRT <= triangle_active_NXT;
             pause_requested_CRT <= pause_requested_NXT;
             command_error_CRT <= command_error_NXT;
             config_error_CRT <= config_error_NXT;
@@ -146,6 +147,7 @@ module command_processor (
     always_ff @(posedge clk_i) begin
         command_CRT <= command_NXT;
         remaining_CRT <= remaining_NXT;
+        pending_CRT <= pending_NXT;
         saved_command_base_CRT <= saved_command_base_NXT;
         saved_command_end_CRT <= saved_command_end_NXT;
         saved_primitive_base_CRT <= saved_primitive_base_NXT;
@@ -159,7 +161,7 @@ module command_processor (
 
     logic command_range_valid, primitive_range_valid, list_valid;
     logic framebuffer_valid, z_valid, draw_range_valid;
-    logic resume_valid, draw_config_valid, draw_address_valid;
+    logic resume_valid, draw_config_valid, draw_address_valid, stream_address_valid;
     logic [34:0] primitive_limit;
     logic [32:0] command_next, framebuffer_limit, z_limit, texture_limit;
     logic [31:0] framebuffer_bytes;
@@ -228,7 +230,8 @@ module command_processor (
                             (saved_primitive_base_CRT == primitive_base_i) & (saved_primitive_end_CRT == primitive_end_i);
 
     assign draw_config_valid = !config_i.texture_en | config_i.perspective_correct;
-    assign draw_address_valid = draw_range_valid & framebuffer_valid & (!config_i.z_test_enable | z_valid);
+    assign stream_address_valid = framebuffer_valid & (!config_i.z_test_enable | z_valid);
+    assign draw_address_valid = draw_range_valid & stream_address_valid;
 
 
 //====================================================================================
@@ -238,6 +241,13 @@ module command_processor (
     logic start_request, pipeline_ready;
     logic memory_fault, pipeline_fault;
 
+    /* Keep acceptance independent of the stream-end next-state decision. */
+    assign pipeline_ready = !soft_reset_i & !pipeline_error_i &
+        (((state_CRT == DRAW_RUN) & (remaining_CRT != 0) & (pending_CRT != 3)) |
+         ((state_CRT == STREAM_RUN) & enable_i & !stop_i & !pause_requested_CRT & !memory_error_i));
+    assign primitive_ready_o = pipeline_ready & !triangle_stall_i;
+    assign triangle_valid_o = pipeline_ready & primitive_valid_i;
+
     always_comb begin
         /* Register defaults */
         state_NXT = state_CRT;
@@ -245,9 +255,9 @@ module command_processor (
         discard_memory_NXT = discard_memory_CRT;
         command_active_NXT = command_active_CRT;
         list_loaded_NXT = list_loaded_CRT;
-        triangle_active_NXT = triangle_active_CRT;
         pause_requested_NXT = pause_requested_CRT;
         remaining_NXT = remaining_CRT;
+        pending_NXT = pending_CRT;
         saved_command_base_NXT = saved_command_base_CRT;
         saved_command_end_NXT = saved_command_end_CRT;
         saved_primitive_base_NXT = saved_primitive_base_CRT;
@@ -288,11 +298,8 @@ module command_processor (
         clear_depth_o = '0;
 
         start_request = start_i & enable_i & !stop_i;
-        pipeline_ready = 1'b0;
         command_ready_o = 1'b0;
         command_request_o = 1'b0;
-        primitive_ready_o = 1'b0;
-        triangle_valid_o = 1'b0;
         stall_o = pipeline_busy_i & !pixel_ready_i;
 
         case (state_CRT)
@@ -349,7 +356,7 @@ module command_processor (
                 pipeline_fault = !soft_reset_i & pipeline_done_i & pipeline_error_i;
 
                 if (start_request) begin
-                    state_NXT = RESUME;
+                    state_NXT = passthrough_i ? INITIALIZE : RESUME;
 
                     pause_requested_NXT = 1'b0;
                     discard_memory_NXT = 1'b0;
@@ -357,14 +364,24 @@ module command_processor (
             end
 
             INITIALIZE: begin
-                memory_initialize_o = list_valid;
+                memory_initialize_o = passthrough_i ? (stream_address_valid & draw_config_valid) : list_valid;
 
                 memory_fault = memory_error_i;
                 pipeline_fault = !soft_reset_i & pipeline_done_i & pipeline_error_i;
 
-                list_loaded_NXT = list_valid;
+                list_loaded_NXT = !passthrough_i & list_valid;
 
-                if (!list_valid) begin
+                if (passthrough_i) begin
+                    if (!draw_config_valid) begin
+                        config_error_NXT = 1'b1;
+                        state_NXT = ERROR_DRAIN;
+                    end else if (!stream_address_valid) begin
+                        address_error_NXT = 1'b1;
+                        state_NXT = ERROR_DRAIN;
+                    end else begin
+                        state_NXT = STREAM_RUN;
+                    end
+                end else if (!list_valid) begin
                     address_error_NXT = 1'b1;
                     state_NXT = ERROR_DRAIN;
                 end else begin
@@ -479,42 +496,55 @@ module command_processor (
                 endcase
             end
 
-            DRAW_START: begin
-                /* Notify the memory unit to fetch N primitives */
-                draw_start_o = 1'b1;
-                draw_count_o = command_CRT.payload.primitive_count;
-
+            STREAM_RUN: begin
+                /* Reuse the primitive handshake without fetching a command or DRAW. */
+                stall_o = stall_o | (primitive_valid_i & !primitive_ready_o);
                 memory_fault = memory_error_i;
                 pipeline_fault = !soft_reset_i & pipeline_done_i & pipeline_error_i;
 
+                if (stop_i | !enable_i | pause_requested_CRT) begin
+                    state_NXT = PAUSE_DRAIN;
+                end else if (stream_end_i & !primitive_valid_i) begin
+                    state_NXT = END_DRAIN;
+                end
+            end
+
+            DRAW_START: begin
+                /* Notify the memory unit to fetch N primitives. */
+                draw_start_o = 1'b1;
+                draw_count_o = command_CRT.payload.primitive_count;
+                pending_NXT = '0;
+
+                memory_fault = memory_error_i;
+                pipeline_fault = !soft_reset_i & pipeline_done_i & pipeline_error_i;
                 state_NXT = DRAW_RUN;
             end
 
             DRAW_RUN: begin
-                /* Monitor status from memory unit */
-                pipeline_ready = !triangle_active_CRT & !pipeline_busy_i & !pipeline_error_i & !soft_reset_i;
-                primitive_ready_o = pipeline_ready & !triangle_stall_i;
-                triangle_valid_o = pipeline_ready & primitive_valid_i;
-
-                stall_o = stall_o | (!triangle_active_CRT & (!primitive_valid_i | !primitive_ready_o));
+                /* Setup, rasterization and the previous pixel tail may overlap. */
+                stall_o = stall_o | ((remaining_CRT != 0) & (!primitive_valid_i | !primitive_ready_o));
 
                 memory_fault = memory_error_i;
                 pipeline_fault = !soft_reset_i & pipeline_done_i & pipeline_error_i;
 
                 if (primitive_valid_i & primitive_ready_o) begin
-                    triangle_active_NXT = 1'b1;
+                    remaining_NXT = remaining_CRT - 1'b1;
                 end
 
-                if (pipeline_done_i & triangle_active_CRT) begin
-                    /* Pipe has done processing a triangle */
-                    state_NXT = TRIANGLE_DRAIN;
+                case ({primitive_valid_i & primitive_ready_o, pipeline_done_i})
+                    2'b10: pending_NXT = pending_CRT + 1'b1;
+                    2'b01: pending_NXT = pending_CRT - 1'b1;
+                    default: begin
+                    end
+                endcase
 
-                    triangle_active_NXT = 1'b0;
-                    remaining_NXT = remaining_CRT - 28'd1;
+                if ((remaining_CRT == 0) & (pending_CRT == 0) & !pipeline_busy_i) begin
+                    state_NXT = DRAW_DRAIN;
                 end
             end
 
-            TRIANGLE_DRAIN: begin
+            DRAW_DRAIN: begin
+                /* Flush only after every triangle in this DRAW has completed. */
                 framebuffer_flush_o = 1'b1;
                 stall_o = 1'b1;
 
@@ -522,13 +552,7 @@ module command_processor (
                 pipeline_fault = !soft_reset_i & pipeline_done_i & pipeline_error_i;
 
                 if (framebuffer_idle_i & !pipeline_busy_i) begin
-                    if (remaining_CRT == 0) begin
-                        /* Done executing the primitive batch */
-                        state_NXT = COMMIT;
-                    end else begin
-                        /* Draw another primitive */
-                        state_NXT = DRAW_RUN;
-                    end
+                    state_NXT = COMMIT;
                 end
             end
 
@@ -636,7 +660,7 @@ module command_processor (
             end
 
             PAUSE_DRAIN: begin
-                framebuffer_flush_o = 1'b1;
+                framebuffer_flush_o = !pipeline_busy_i;
                 stall_o = 1'b1;
 
                 memory_fault = memory_error_i;
@@ -648,7 +672,7 @@ module command_processor (
             end
 
             END_DRAIN: begin
-                framebuffer_flush_o = 1'b1;
+                framebuffer_flush_o = !pipeline_busy_i;
                 stall_o = 1'b1;
 
                 memory_fault = memory_error_i;
@@ -709,7 +733,6 @@ module command_processor (
             address_error_NXT = memory_error_i;
             config_error_NXT = !memory_error_i & !pipeline_math_error_i;
             math_error_NXT = !memory_error_i & pipeline_math_error_i;
-            triangle_active_NXT = 1'b0;
             state_NXT = ERROR_DRAIN;
         end
 
@@ -722,7 +745,6 @@ module command_processor (
             discard_memory_NXT = 1'b0;
             command_active_NXT = 1'b0;
             list_loaded_NXT = 1'b0;
-            triangle_active_NXT = 1'b0;
             pause_requested_NXT = 1'b0;
             command_error_NXT = 1'b0;
             config_error_NXT = 1'b0;

@@ -65,13 +65,20 @@ module triangle_setup #(
 
     logic [9:0] viewport_width;
     logic [8:0] viewport_height;
+    logic [9:0] viewport_xmax;
+    logic [8:0] viewport_ymax;
 
     always_comb begin
         viewport_width = 10'd640;
         viewport_height = 9'd480;
+        viewport_xmax = 10'd639;
+        viewport_ymax = 9'd479;
+
         if (viewport_size_i == RE_VIEWPORT_320_240) begin
             viewport_width = 10'd320;
             viewport_height = 9'd240;
+            viewport_xmax = 10'd319;
+            viewport_ymax = 9'd239;
         end
     end
 
@@ -281,12 +288,12 @@ module triangle_setup #(
             end
 
             /* Clamping to viewport */
-            if (bb_x_end >= $signed({1'b0, viewport_width})) begin
-                bb_x_end = $signed({1'b0, viewport_width}) - 11'sd1;
+            if (bb_x_end > $signed({1'b0, viewport_xmax})) begin
+                bb_x_end = $signed({1'b0, viewport_xmax});
             end
 
-            if (bb_y_end >= $signed({1'b0, viewport_height})) begin
-                bb_y_end = $signed({1'b0, viewport_height}) - 10'sd1;
+            if (bb_y_end > $signed({1'b0, viewport_ymax})) begin
+                bb_y_end = $signed({1'b0, viewport_ymax});
             end
 
             /* Clamping to scissor */

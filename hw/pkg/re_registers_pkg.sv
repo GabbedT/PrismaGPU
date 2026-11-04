@@ -75,10 +75,13 @@ package re_registers_pkg;
      * Command bits are write-one pulses and read as zero.
      * STOP completes the current command before pausing; START resumes it
      * at the next command, or starts a new list at RE_CMD_BASE.
-     * Clearing enable prevents new work but allows in-flight work to drain. */
+     * Clearing enable prevents new work but allows in-flight work to drain.
+     * Passthrough uses START/STOP for streaming; explicit stream_end completes it.
+     * Source changes while busy or paused are rejected, including command bits. */
     typedef struct packed {
         logic enable_pcounters;   /* [8] */
-        logic [3:0] reserved;     /* [7:4] */
+        logic [2:0] reserved;     /* [7:5] */
+        logic passthrough;        /* [4]: direct GE stream, no command list */
         logic soft_reset;         /* [3] */
         logic stop_processing;    /* [2] */
         logic start_processing;   /* [1] */
@@ -89,7 +92,7 @@ package re_registers_pkg;
     /* RE_STATUS[31:0]; unlike GE, IRQ fields have their own layout.
      * NOTIFY_ID latches on NOTIFY completion, independently of IRQ_EN.
      * Hardware and soft reset clear it; other control/IRQ operations preserve it.
-     * DONE is list completion, not the per-triangle pipeline done pulse.
+     * DONE is list/stream completion, not the per-triangle pipeline done pulse.
      * It requires completed depth writes and framebuffer writer completion. */
     typedef struct packed {
         logic [25:0] notify_id; /* [31:6]: ID of the last completed NOTIFY */

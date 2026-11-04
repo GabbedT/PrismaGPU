@@ -17,7 +17,9 @@ module triangle_unpacker #(
 
     /* Output transfer */
     output input_vertex_t vertex_o,
-    output logic valid_o
+    output logic valid_o,
+    /* No queued word, registered word, or partial input triangle. */
+    output logic idle_o
 );
 
 //====================================================================================
@@ -173,6 +175,8 @@ module triangle_unpacker #(
             endcase
         end
     end
+
+    assign idle_o = fifo_empty & !fifo_valid & (state_CRT == WORD0) & !write_i;
 
 endmodule : triangle_unpacker
 

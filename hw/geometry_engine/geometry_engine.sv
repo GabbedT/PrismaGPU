@@ -27,7 +27,10 @@ module geometry_engine #(
     output logic [127:0] read_data_o,
     output logic [$clog2(OUTPUT_FIFO_DEPTH + 1) - 1:0] output_word_count_o,
 
-    /* Direct raster transfer; receiver accepts every cycle with valid high */
+    /* Direct raster transfer: raster_valid_o && !raster_stall_i. */
+    input logic raster_stall_i,
+    /* Input and geometry pipeline drained; excludes packed memory output. */
+    output logic idle_o,
     output logic raster_valid_o,
     output proc_triangle_t raster_triangle_o,
 
@@ -49,6 +52,7 @@ module geometry_engine #(
     logic start_processing, stop_processing, processing;
     logic datapath_rst_n, pipeline_stall, pipeline_input_stall, unpacker_stall, packer_stall;
     logic busy, vertex_valid, triangle_valid, forward_valid;
+    logic unpacker_idle, mode_write_blocked, register_write_error;
 
     input_vertex_t vertex;
     vertex_t forward_vertex;
@@ -68,11 +72,18 @@ module geometry_engine #(
 
     /* Soft reset flushes data and counters, preserving register configuration */
     assign datapath_rst_n = rst_n_i & !soft_reset;
-    assign pipeline_stall = !enable | (packer_stall & !raster_forward);
+    assign pipeline_stall = !enable | (raster_forward ? raster_stall_i : packer_stall);
+    assign idle_o = unpacker_idle & !busy;
+
+    /* Changing destinations must not redirect a held or queued triangle. */
+    assign mode_write_blocked = !idle_o & (register_write_address_i == GE_CTRL) &
+                                register_write_strobe_i[1] &
+                                (register_write_data_i[1][1] != raster_forward);
+    assign register_write_error_o = register_write_error | (register_write_i & mode_write_blocked);
     assign unpacker_stall = !enable | !processing | stop_processing | pipeline_input_stall;
 
     assign raster_triangle_o = triangle;
-    assign raster_valid_o = triangle_valid & enable & raster_forward;
+    assign raster_valid_o = triangle_valid & enable & raster_forward & datapath_rst_n;
 
         /* STOP pauses input consumption; triangles already in the pipeline drain */
         always_ff @(posedge clk_i `ifdef ASYNC or negedge rst_n_i `endif) begin
@@ -131,11 +142,11 @@ module geometry_engine #(
         .discarded_triangle_count_i ( discarded_triangle_count ),
         .stall_cycle_count_i        ( stall_cycle_count        ),
 
-        .write_i         ( register_write_i         ),
+        .write_i         ( register_write_i & !mode_write_blocked ),
         .write_address_i ( register_write_address_i ),
         .write_data_i    ( register_write_data_i    ),
         .write_strobe_i  ( register_write_strobe_i  ),
-        .write_error_o   ( register_write_error_o   ),
+        .write_error_o   ( register_write_error     ),
 
         .read_i          ( register_read_i          ),
         .read_address_i  ( register_read_address_i  ),
@@ -160,7 +171,8 @@ module geometry_engine #(
         .word_count_o ( input_word_count_o       ),
 
         .vertex_o ( vertex       ),
-        .valid_o  ( vertex_valid )
+        .valid_o  ( vertex_valid ),
+        .idle_o   ( unpacker_idle )
     );
 
 
