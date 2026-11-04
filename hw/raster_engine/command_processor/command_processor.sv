@@ -158,12 +158,11 @@ module command_processor (
 //====================================================================================
 
     logic command_range_valid, primitive_range_valid, list_valid;
-    logic viewport_valid, framebuffer_valid, z_valid, draw_range_valid;
+    logic framebuffer_valid, z_valid, draw_range_valid;
     logic resume_valid, draw_config_valid, draw_address_valid;
     logic [34:0] primitive_limit;
     logic [32:0] command_next, framebuffer_limit, z_limit, texture_limit;
     logic [31:0] framebuffer_bytes;
-    logic [15:0] z_pitch;
     logic [31:0] z_bytes;
     logic [13:0] texture_bytes;
 
@@ -200,31 +199,15 @@ module command_processor (
     /* FSM can start fetching valid buffers */
     assign list_valid = command_range_valid & primitive_range_valid;
 
-        always_comb begin
-            viewport_valid = 1'b0;
-            framebuffer_bytes = '0;
-            z_pitch = '0;
-            z_bytes = '0;
+    always_comb begin
+        framebuffer_bytes = 32'd460800;
+        z_bytes = 32'd614400;
 
-            /* Fixed viewport configuration */
-            case ({config_i.viewport_width, config_i.viewport_height})
-                {10'd640, 9'd480}: begin
-                    viewport_valid = 1'b1;
-                    framebuffer_bytes = 32'd460800;
-
-                    z_pitch = 16'd1280;
-                    z_bytes = 32'd614400;
-                end
-
-                {10'd320, 9'd240}: begin
-                    viewport_valid = 1'b1;
-                    framebuffer_bytes = 32'd115200;
-
-                    z_pitch = 16'd640;
-                    z_bytes = 32'd153600;
-                end
-            endcase
+        if (config_i.viewport_size == RE_VIEWPORT_320_240) begin
+            framebuffer_bytes = 32'd115200;
+            z_bytes = 32'd153600;
         end
+    end
 
     /* Check limit and validity */
     assign framebuffer_limit = {1'b0, framebuffer_base_i} + {1'b0, framebuffer_bytes};
@@ -232,11 +215,11 @@ module command_processor (
 
     assign z_limit = {1'b0, z_buffer_base_i} + {1'b0, z_bytes};
     assign z_valid = (z_buffer_base_i[3:0] == 0) & (config_i.z_buffer_address == z_buffer_base_i) &
-                        (config_i.z_buffer_pitch == z_pitch) & (z_limit <= {1'b0, z_buffer_end_i});
+                        (z_limit <= {1'b0, z_buffer_end_i});
 
     /* Keep carry bits until after range checks. */
     assign command_next = {1'b0, command_pointer_i} + 33'd4;
-    assign primitive_limit = primitive_pointer_i + (command_CRT.payload.primitive_count << 6);
+    assign primitive_limit = 35'(primitive_pointer_i) + (35'(command_CRT.payload.primitive_count) << 6);
     assign draw_range_valid = primitive_limit <= 35'(primitive_end_i);
     assign texture_limit = {1'b0, command_CRT.payload.address_upper, 4'b0} + {19'b0, texture_bytes};
 
@@ -244,7 +227,7 @@ module command_processor (
     assign resume_valid = (saved_command_base_CRT == command_base_i) & (saved_command_end_CRT == command_end_i) &
                             (saved_primitive_base_CRT == primitive_base_i) & (saved_primitive_end_CRT == primitive_end_i);
 
-    assign draw_config_valid = viewport_valid & (!config_i.texture_en | config_i.perspective_correct);
+    assign draw_config_valid = !config_i.texture_en | config_i.perspective_correct;
     assign draw_address_valid = draw_range_valid & framebuffer_valid & (!config_i.z_test_enable | z_valid);
 
 
@@ -480,10 +463,6 @@ module command_processor (
                             state_NXT = ERROR_DRAIN;
                             
                             command_error_NXT = 1'b1;
-                        end else if (!viewport_valid) begin
-                            state_NXT = ERROR_DRAIN;
-
-                            config_error_NXT = 1'b1;
                         end else if (!z_valid) begin
                             state_NXT = ERROR_DRAIN;
 

@@ -13,8 +13,7 @@ module framebuffer_access (
     /* Packed RGB444 surface */
     input logic [31:0] base_i,
     input logic [31:0] end_i,
-    input logic [9:0] width_i,
-    input logic [8:0] height_i,
+    input re_viewport_size_t viewport_size_i,
 
     /* Pixel write stream */
     input pixel_t pixel_i,
@@ -84,32 +83,50 @@ module framebuffer_access (
 //      PIXEL ADDRESSES
 //====================================================================================
 
-    logic [18:0] pixel_index, blend_index;
-    logic [22:0] pixel_bit, blend_bit;
+    logic [9:0] viewport_width;
+    logic [8:0] viewport_height;
+    logic [11:0] pixel_tripled_x, blend_tripled_x;
+    logic [14:0] pixel_row, blend_row, pixel_word, blend_word;
+    logic [6:0] pixel_offset, blend_pixel_offset;
     logic [32:0] pixel_address, blend_address_ext;
     logic [32:0] pixel_access_end, blend_access_end;
     logic surface_valid, pixel_in_range, blend_in_range;
     logic pixel_split, blend_split;
 
-    /* y*width+x fits in 19 bits for all input values; RGB444 uses 12 bits. */
-    assign pixel_index = pixel_y_i * width_i + pixel_x_i;
-    assign blend_index = blend_y_i * width_i + blend_x_i;
-    assign pixel_bit = pixel_index * 23'd12;
-    assign blend_bit = blend_index * 23'd12;
+    always_comb begin
+        viewport_width = 10'd640;
+        viewport_height = 9'd480;
+        pixel_row = (15'(pixel_y_i) << 5) - (15'(pixel_y_i) << 1);
+        blend_row = (15'(blend_y_i) << 5) - (15'(blend_y_i) << 1);
 
-    assign pixel_address = {1'b0, base_i} + {13'b0, pixel_bit[22:7], 4'b0};
-    assign blend_address_ext = {1'b0, base_i} + {13'b0, blend_bit[22:7], 4'b0};
-    assign pixel_split = pixel_bit[6:0] > 7'd116;
-    assign blend_split = blend_bit[6:0] > 7'd116;
-    assign pixel_access_end = pixel_address + (pixel_split ? 33'd32 : 33'd16);
-    assign blend_access_end = blend_address_ext + (blend_split ? 33'd32 : 33'd16);
+        if (viewport_size_i == RE_VIEWPORT_320_240) begin
+            viewport_width = 10'd320;
+            viewport_height = 9'd240;
+        end else begin
+            pixel_row = pixel_row << 1;
+            blend_row = blend_row << 1;
+        end
 
-    assign surface_valid = (width_i != 0) && (width_i <= 640) &&
-                           (height_i != 0) && (height_i <= 480) && (base_i[3:0] == 0);
-    assign pixel_in_range = surface_valid && (pixel_x_i < width_i) && (pixel_y_i < height_i) &&
-                           (pixel_access_end <= {1'b0, end_i});
-    assign blend_in_range = surface_valid && (blend_x_i < width_i) && (blend_y_i < height_i) &&
-                           (blend_access_end <= {1'b0, end_i});
+        /* RGB444: 3*x nibbles; every row starts on a DDR word. */
+        pixel_tripled_x = (12'(pixel_x_i) << 1) + 12'(pixel_x_i);
+        blend_tripled_x = (12'(blend_x_i) << 1) + 12'(blend_x_i);
+        pixel_word = pixel_row + 15'(pixel_tripled_x[11:5]);
+        blend_word = blend_row + 15'(blend_tripled_x[11:5]);
+        pixel_offset = {pixel_tripled_x[4:0], 2'b0};
+        blend_pixel_offset = {blend_tripled_x[4:0], 2'b0};
+        pixel_address = {1'b0, base_i} + {14'b0, pixel_word, 4'b0};
+        blend_address_ext = {1'b0, base_i} + {14'b0, blend_word, 4'b0};
+        pixel_split = pixel_offset > 7'd116;
+        blend_split = blend_pixel_offset > 7'd116;
+        pixel_access_end = pixel_address + (pixel_split ? 33'd32 : 33'd16);
+        blend_access_end = blend_address_ext + (blend_split ? 33'd32 : 33'd16);
+
+        surface_valid = base_i[3:0] == 0;
+        pixel_in_range = surface_valid && (pixel_x_i < viewport_width) && (pixel_y_i < viewport_height) &&
+                         (pixel_access_end <= {1'b0, end_i});
+        blend_in_range = surface_valid && (blend_x_i < viewport_width) && (blend_y_i < viewport_height) &&
+                         (blend_access_end <= {1'b0, end_i});
+    end
 
 
 //====================================================================================
@@ -183,7 +200,7 @@ module framebuffer_access (
                             state <= FAULT;
                         end else begin
                             blend_address <= blend_address_ext[31:0];
-                            blend_offset <= blend_bit[6:0];
+                            blend_offset <= blend_pixel_offset;
                             blend_second <= 1'b0;
                             return_state <= BLEND;
                             if (dirty_bits != 0) begin
@@ -199,8 +216,8 @@ module framebuffer_access (
                         end else begin
                             pending_address <= pixel_address[31:0];
                             pending_y <= pixel_y_i;
-                            pending_data <= 140'(pixel_i) << pixel_bit[6:0];
-                            pending_mask <= 140'hfff << pixel_bit[6:0];
+                            pending_data <= 140'(pixel_i) << pixel_offset;
+                            pending_mask <= 140'hfff << pixel_offset;
                             state <= MERGE;
                         end
                     end

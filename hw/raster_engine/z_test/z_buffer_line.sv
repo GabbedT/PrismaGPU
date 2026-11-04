@@ -8,7 +8,7 @@ module z_buffer_line #(
     input logic rst_n_i,
 
     /* To compare X coordinate */
-    input logic [9:0] viewport_width_i,
+    input re_viewport_size_t viewport_size_i,
 
     /* Select between front/back buffer */
     input logic buffer_select_i,
@@ -53,21 +53,29 @@ module z_buffer_line #(
     logic [1:0][127:0] ddr_word;
     logic [15:0] ddr_mask;
     logic pixel_read_enable, pixel_write_enable, ddr_address_valid;
+    logic [9:0] viewport_width;
 
-    assign pixel_read_enable = rst_n_i & z_read_i & (z_read_address_i < 640) & (z_read_address_i < viewport_width_i);
-    assign pixel_write_enable = rst_n_i & z_write_i & (z_write_address_i < 640) & (z_write_address_i < viewport_width_i);
-    assign ddr_address_valid = (ddr_address_i < 640) & (ddr_address_i[LANE_BITS - 1:0] == '0);
+    always_comb begin
+        viewport_width = 10'd640;
+
+        if (viewport_size_i == RE_VIEWPORT_320_240) begin
+            viewport_width = 10'd320;
+        end
+    end
+
+    assign pixel_read_enable = z_read_i & (z_read_address_i < viewport_width);
+    assign pixel_write_enable = z_write_i & (z_write_address_i < viewport_width);
+    assign ddr_address_valid = (ddr_address_i < viewport_width) & (ddr_address_i[LANE_BITS - 1:0] == '0);
     assign ddr_word = ddr_data;
 
-        always_comb begin
-            ddr_mask = '0;
-
-            for (int lane = 0; lane < LANES; lane++) begin
-                if (ddr_address_valid & ((int'(ddr_address_i) + lane) < int'(viewport_width_i))) begin
-                    ddr_mask[lane * SLOT_BYTES +: SLOT_BYTES] = ddr_mask_i[lane * SLOT_BYTES +: SLOT_BYTES];
-                end
-            end
+    /* Fixed widths contain whole DDR words; span masks still select lanes. */
+    always_comb begin
+        ddr_mask = '0;
+        
+        if (ddr_address_valid) begin
+            ddr_mask = ddr_mask_i;
         end
+    end
 
         always_ff @(posedge clk_i) begin
             if (!rst_n_i) begin
@@ -114,7 +122,7 @@ module z_buffer_line #(
 
             assign pixel_write = pixel_write_enable & (buffer_select_i == 1'(bank)) & (z_write_address_i[LANE_BITS - 1:0] == LANE_BITS'(lane));
             
-            assign dma_enable = rst_n_i & ddr_address_valid & (ddr_buffer_select_i == 1'(bank));
+            assign dma_enable = ddr_address_valid & (ddr_buffer_select_i == 1'(bank));
             
             assign port_address = pixel_write ? WORD_BITS'(z_write_address_i >> LANE_BITS) : WORD_BITS'(ddr_address_i >> LANE_BITS);
             assign port_data = pixel_write ? SLOT_WIDTH'(z_write_data_i) : ddr_write_data_i[lane * SLOT_WIDTH +: SLOT_WIDTH];

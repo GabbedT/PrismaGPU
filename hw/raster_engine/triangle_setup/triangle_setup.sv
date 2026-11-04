@@ -19,8 +19,7 @@ module triangle_setup #(
     input logic z_interpolation_i,
 
     /* Viewport setup */
-    input logic [9:0] viewport_width_i,
-    input logic [8:0] viewport_height_i,
+    input re_viewport_size_t viewport_size_i,
 
     /* Scissor */
     input logic scissor_enable_i,
@@ -63,6 +62,18 @@ module triangle_setup #(
     output logic setup_discard_o,
     output logic busy_o
 );
+
+    logic [9:0] viewport_width;
+    logic [8:0] viewport_height;
+
+    always_comb begin
+        viewport_width = 10'd640;
+        viewport_height = 9'd480;
+        if (viewport_size_i == RE_VIEWPORT_320_240) begin
+            viewport_width = 10'd320;
+            viewport_height = 9'd240;
+        end
+    end
 
 //====================================================================================
 //      PARAMETERS AND FUNCTIONS
@@ -155,10 +166,8 @@ module triangle_setup #(
     logic [2:0] config_valid, inv_w_invalid, inv_w_range;
     logic [2:0][47:0] decoded_w_CRT, decoded_w_NXT;
 
-    /* Check validity withing max viewport coordinates */
-    assign config_max_valid = (viewport_width_i > 0) & (viewport_width_i <= 640) &
-                              (viewport_height_i > 0) & (viewport_height_i <= 480) &
-                             !(texture_i & !perspective_correct_i);
+    /* Texture sampling requires perspective attributes. */
+    assign config_max_valid = !(texture_i & !perspective_correct_i);
 
     always_comb begin
         /* Default Values */
@@ -167,8 +176,8 @@ module triangle_setup #(
 
         for (int i = 0; i < 3; i++) begin
             /* Check coordinates validity against current viewport */
-            config_valid[i] = (triangle_CRT.vtx[i].pos.x >= 0) & (triangle_CRT.vtx[i].pos.x <= $signed({1'b0, viewport_width_i, 8'b0})) &
-                              (triangle_CRT.vtx[i].pos.y >= 0) & (triangle_CRT.vtx[i].pos.y <= $signed({1'b0, viewport_height_i, 8'b0}));
+            config_valid[i] = (triangle_CRT.vtx[i].pos.x >= 0) & (triangle_CRT.vtx[i].pos.x <= $signed({1'b0, viewport_width, 8'b0})) &
+                              (triangle_CRT.vtx[i].pos.y >= 0) & (triangle_CRT.vtx[i].pos.y <= $signed({1'b0, viewport_height, 8'b0}));
             
             /* Check W validity */
             if (texture_i & perspective_correct_i) begin
@@ -272,12 +281,12 @@ module triangle_setup #(
             end
 
             /* Clamping to viewport */
-            if (bb_x_end >= $signed({1'b0, viewport_width_i})) begin
-                bb_x_end = $signed({1'b0, viewport_width_i}) - 11'sd1;
+            if (bb_x_end >= $signed({1'b0, viewport_width})) begin
+                bb_x_end = $signed({1'b0, viewport_width}) - 11'sd1;
             end
 
-            if (bb_y_end >= $signed({1'b0, viewport_height_i})) begin
-                bb_y_end = $signed({1'b0, viewport_height_i}) - 10'sd1;
+            if (bb_y_end >= $signed({1'b0, viewport_height})) begin
+                bb_y_end = $signed({1'b0, viewport_height}) - 10'sd1;
             end
 
             /* Clamping to scissor */
@@ -438,8 +447,7 @@ module triangle_setup #(
         .command_i       ( math_command_CRT ),
         .command_ready_o ( math_req_ready   ),
 
-        .viewport_width_i  ( viewport_width_i  ),
-        .viewport_height_i ( viewport_height_i ),
+        .viewport_size_i ( viewport_size_i ),
 
         .x0_i ( math_x0 ),
         .x1_i ( math_x1 ),

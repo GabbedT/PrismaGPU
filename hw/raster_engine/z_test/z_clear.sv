@@ -8,15 +8,13 @@ module z_clear #(
     input logic clk_i,
     input logic rst_n_i,
 
-    /* Validated clear job; hold configuration through done */
+    /* Validated clear job; fixed rows have no padding. */
     input logic start_i,
     input logic [Z_WIDTH - 1:0] depth_i,
     input logic [ADDRESS_WIDTH - 1:0] base_i,
-    input logic [9:0] width_i,
-    input logic [8:0] height_i,
-    input logic [15:0] pitch_i,
+    input re_viewport_size_t viewport_size_i,
 
-    /* Completion follows the final write response */
+    /* Completion follows the final write response. */
     output logic busy_o,
     output logic done_o,
 
@@ -35,98 +33,96 @@ module z_clear #(
 
     localparam integer SLOT = Z_WIDTH <= 16 ? 16 : 32;
     localparam integer LANES = 128 / SLOT;
-    localparam integer BYTE_SHIFT = (Z_WIDTH <= 16) ? 1 : 2;
+    localparam integer COUNT_WIDTH = $clog2(640 * 480 / LANES + 1);
 
     typedef enum logic [1:0] {
         IDLE,
         REQUEST,
         RESPONSE
     } state_t;
-    state_t state;
-    logic [ADDRESS_WIDTH - 1:0] row_address;
-    logic [9:0] x;
-    logic [8:0] y;
-    logic [Z_WIDTH - 1:0] depth;
-    logic [10:0] next_x;
-    logic last_word;
 
-    assign next_x = {1'b0, x} + 11'(LANES);
-    assign last_word = next_x >= {1'b0, width_i};
-    assign busy_o = state != IDLE;
-    assign request_o = state == REQUEST;
-    assign address_o = row_address + (ADDRESS_WIDTH'(x) << BYTE_SHIFT);
-
-//====================================================================================
-//      DEPTH SLOTS AND BYTE ENABLES
-//====================================================================================
-
-    /* Preserve padding after the final pixel of each row. */
-    always_comb begin
-        data_o = '0;
-        mask_o = '0;
-        for (int lane = 0; lane < LANES; lane++) begin
-            data_o[lane * SLOT +: SLOT] = SLOT'(depth);
-            if ({1'b0, x} + 11'(lane) < {1'b0, width_i}) begin
-                mask_o[lane * (SLOT / 8) +: SLOT / 8] = '1;
-            end
-        end
-    end
-
-//====================================================================================
-//      WRITE SEQUENCE
-//====================================================================================
+    state_t state_CRT, state_NXT;
+    logic [ADDRESS_WIDTH - 1:0] address_CRT, address_NXT;
+    logic [COUNT_WIDTH - 1:0] remaining_CRT, remaining_NXT;
+    logic [Z_WIDTH - 1:0] depth_CRT, depth_NXT;
+    logic done_NXT;
 
     always_ff @(posedge clk_i) begin
         if (!rst_n_i) begin
-            state <= IDLE;
-            x <= '0;
-            y <= '0;
-            row_address <= '0;
-            depth <= '0;
+            state_CRT <= IDLE;
             done_o <= 1'b0;
         end else begin
-            done_o <= 1'b0;
-            case (state)
-                IDLE: begin
-                    if (start_i) begin
-                        row_address <= base_i;
-                        depth <= depth_i;
-                        x <= '0;
-                        y <= '0;
-                        state <= REQUEST;
-                    end
-                end
-
-                REQUEST: begin
-                    if (ready_i) begin
-                        state <= RESPONSE;
-                    end
-                end
-
-                RESPONSE: begin
-                    if (response_i) begin
-                        if (last_word) begin
-                            x <= '0;
-                            y <= y + 9'd1;
-                            row_address <= row_address + ADDRESS_WIDTH'(pitch_i);
-                            if (y + 9'd1 == height_i) begin
-                                state <= IDLE;
-                                done_o <= 1'b1;
-                            end else begin
-                                state <= REQUEST;
-                            end
-                        end else begin
-                            x <= next_x[9:0];
-                            state <= REQUEST;
-                        end
-                    end
-                end
-
-                default: begin
-                    state <= IDLE;
-                end
-            endcase
+            state_CRT <= state_NXT;
+            done_o <= done_NXT;
         end
+    end
+
+    /* A new job initializes payload before the first request. */
+    always_ff @(posedge clk_i) begin
+        address_CRT <= address_NXT;
+        remaining_CRT <= remaining_NXT;
+        depth_CRT <= depth_NXT;
+    end
+
+//====================================================================================
+//      LINEAR WRITE SEQUENCE
+//====================================================================================
+
+    always_comb begin
+        state_NXT = state_CRT;
+        address_NXT = address_CRT;
+        remaining_NXT = remaining_CRT;
+        depth_NXT = depth_CRT;
+        done_NXT = 1'b0;
+
+        busy_o = 1'b1;
+        request_o = 1'b0;
+        address_o = address_CRT;
+        mask_o = 16'hffff;
+        data_o = '0;
+
+        for (int lane = 0; lane < LANES; lane++) begin
+            data_o[lane * SLOT +: SLOT] = SLOT'(depth_CRT);
+        end
+
+        case (state_CRT)
+            IDLE: begin
+                busy_o = 1'b0;
+                if (start_i) begin
+                    address_NXT = base_i;
+                    depth_NXT = depth_i;
+                    remaining_NXT = COUNT_WIDTH'(640 * 480 / LANES);
+                    if (viewport_size_i == RE_VIEWPORT_320_240) begin
+                        remaining_NXT = COUNT_WIDTH'(320 * 240 / LANES);
+                    end
+                    state_NXT = REQUEST;
+                end
+            end
+
+            REQUEST: begin
+                request_o = 1'b1;
+                if (ready_i) begin
+                    state_NXT = RESPONSE;
+                end
+            end
+
+            RESPONSE: begin
+                if (response_i) begin
+                    if (remaining_CRT == 1) begin
+                        done_NXT = 1'b1;
+                        state_NXT = IDLE;
+                    end else begin
+                        address_NXT = address_CRT + ADDRESS_WIDTH'(16);
+                        remaining_NXT = remaining_CRT - 1'b1;
+                        state_NXT = REQUEST;
+                    end
+                end
+            end
+
+            default: begin
+                state_NXT = IDLE;
+            end
+        endcase
     end
 
 endmodule : z_clear

@@ -9,9 +9,8 @@ package raster_config_pkg;
         logic perspective_correct;
         logic z_interpolation;
 
-        /* RE_VP_CFG decodes to 640x480 or 320x240. */
-        logic [9:0] viewport_width;
-        logic [8:0] viewport_height;
+        /* Fixed dimensions and row strides follow RE_VP_CFG. */
+        re_viewport_size_t viewport_size;
 
         logic scissor_enable;
         logic [9:0] scissor_xmin;
@@ -25,7 +24,6 @@ package raster_config_pkg;
         logic z_write_enable;
         logic [2:0] z_compare;
         logic [31:0] z_buffer_address;
-        logic [15:0] z_buffer_pitch;
     } raster_config_t;
 
 endpackage : raster_config_pkg

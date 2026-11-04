@@ -14,8 +14,7 @@ module triangle_math_unit #(
     output logic command_ready_o,
 
     /* Viewport setup */
-    input logic [9:0] viewport_width_i,
-    input logic [8:0] viewport_height_i,
+    input re_viewport_size_t viewport_size_i,
 
     /* Vertex X coordinate */
     input logic signed [18:0] x0_i,
@@ -54,6 +53,18 @@ module triangle_math_unit #(
     output logic busy_o
 );
 
+    logic [9:0] viewport_width;
+    logic [8:0] viewport_height;
+
+    always_comb begin
+        viewport_width = 10'd640;
+        viewport_height = 9'd480;
+        if (viewport_size_i == RE_VIEWPORT_320_240) begin
+            viewport_width = 10'd320;
+            viewport_height = 9'd240;
+        end
+    end
+
 //====================================================================================
 //      PARAMETERS AND FUNCTIONS
 //====================================================================================
@@ -72,14 +83,14 @@ module triangle_math_unit #(
 
     /* Check if X coordinate is inside viewport */
     function automatic logic valid_x(input logic signed [18:0] value, input logic reference_point);
-        return value >= 0 & (reference_point ? value < $signed({1'b0, viewport_width_i, 8'b0}) :
-                                                value <= $signed({1'b0, viewport_width_i, 8'b0}));
+        return value >= 0 & (reference_point ? value < $signed({1'b0, viewport_width, 8'b0}) :
+                                                value <= $signed({1'b0, viewport_width, 8'b0}));
     endfunction
 
     /* Check if Y coordinate is inside viewport */
     function automatic logic valid_y(input logic signed [17:0] value, input logic reference_point);
-        return value >= 0 & (reference_point ? value < $signed({1'b0, viewport_height_i, 8'b0}) :
-                                                value <= $signed({1'b0, viewport_height_i, 8'b0}));
+        return value >= 0 & (reference_point ? value < $signed({1'b0, viewport_height, 8'b0}) :
+                                                value <= $signed({1'b0, viewport_height, 8'b0}));
     endfunction
 
 
@@ -206,8 +217,7 @@ module triangle_math_unit #(
     logic coordinates_valid;
 
     always_comb begin
-        coordinates_valid = (viewport_width_i > 0) & (viewport_width_i <= 640) &
-                            (viewport_height_i > 0) & (viewport_height_i <= 480);
+        coordinates_valid = 1'b1;
 
         case (command_i)
             CALC_INV_AREA: coordinates_valid = 1'b1;

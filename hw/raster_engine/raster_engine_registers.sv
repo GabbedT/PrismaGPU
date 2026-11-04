@@ -347,20 +347,7 @@ module raster_engine_registers (
         config_o.z_compare = z_config.z_compare;
         config_o.z_buffer_address = z_buffer_base;
 
-        /* Both resolutions have naturally aligned 16-bit depth rows. */
-        case (viewport_config.viewport_size)
-            RE_VIEWPORT_640_480: begin
-                config_o.viewport_width = 10'd640;
-                config_o.viewport_height = 9'd480;
-                config_o.z_buffer_pitch = 16'd1280;
-            end
-
-            RE_VIEWPORT_320_240: begin
-                config_o.viewport_width = 10'd320;
-                config_o.viewport_height = 9'd240;
-                config_o.z_buffer_pitch = 16'd640;
-            end
-        endcase
+        config_o.viewport_size = viewport_config.viewport_size;
     end
 
 

@@ -7,7 +7,7 @@ module z_tester #(
 ) (
     input logic clk_i,
     input logic rst_n_i,
-    input logic [9:0] viewport_width_i,
+    input re_viewport_size_t viewport_size_i,
 
     input logic start_i,
     output logic request_o,
@@ -49,8 +49,6 @@ module z_tester #(
     output logic clear_done_o,
     input logic [Z_WIDTH - 1:0] clear_depth_i,
     input logic [ADDRESS_WIDTH - 1:0] clear_base_i,
-    input logic [8:0] clear_height_i,
-    input logic [15:0] clear_pitch_i,
 
     /* DDR Interface */
     output logic ddr_request_o,
@@ -108,22 +106,20 @@ module z_tester #(
         .Z_WIDTH       ( Z_WIDTH       ),
         .ADDRESS_WIDTH ( ADDRESS_WIDTH )
     ) clear_engine (
-        .clk_i      ( clk_i                              ),
-        .rst_n_i    ( rst_n_i                            ),
-        .start_i    ( clear_valid_i && clear_ready_o     ),
-        .depth_i    ( clear_depth_i                      ),
-        .base_i     ( clear_base_i                       ),
-        .width_i    ( viewport_width_i                   ),
-        .height_i   ( clear_height_i                     ),
-        .pitch_i    ( clear_pitch_i                      ),
-        .busy_o     ( clear_busy                         ),
-        .done_o     ( clear_done_o                       ),
-        .request_o  ( clear_request                      ),
-        .ready_i    ( ddr_ready_i && clear_busy          ),
-        .response_i ( ddr_response_valid_i && clear_busy ),
-        .address_o  ( clear_address                      ),
-        .data_o     ( clear_data                         ),
-        .mask_o     ( clear_mask                         )
+        .clk_i           ( clk_i                             ),
+        .rst_n_i         ( rst_n_i                           ),
+        .start_i         ( clear_valid_i && clear_ready_o    ),
+        .depth_i         ( clear_depth_i                     ),
+        .base_i          ( clear_base_i                      ),
+        .viewport_size_i ( viewport_size_i                   ),
+        .busy_o          ( clear_busy                        ),
+        .done_o          ( clear_done_o                      ),
+        .request_o       ( clear_request                     ),
+        .ready_i         ( ddr_ready_i && clear_busy         ),
+        .response_i      ( ddr_response_valid_i && clear_busy ),
+        .address_o       ( clear_address                     ),
+        .data_o          ( clear_data                        ),
+        .mask_o          ( clear_mask                        )
     );
 
     z_buffer_controller #(
@@ -213,7 +209,7 @@ module z_tester #(
     ) line_buffer (
         .clk_i               ( clk_i                 ),
         .rst_n_i             ( rst_n_i               ),
-        .viewport_width_i    ( viewport_width_i      ),
+        .viewport_size_i     ( viewport_size_i       ),
         .buffer_select_i     ( buffer_select         ),
         .z_read_i            ( z_read                ),
         .z_read_address_i    ( z_read_address        ),

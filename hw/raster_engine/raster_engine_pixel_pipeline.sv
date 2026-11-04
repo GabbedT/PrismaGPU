@@ -89,9 +89,7 @@ module raster_engine_pixel_pipeline (
     assign busy_o = state_CRT != IDLE || clear_active;
     assign error_o = (status_o == SETUP_MATH_ERROR) | (status_o == SETUP_INVALID_CONFIG);
     assign discard_o = status_o != SETUP_OK;
-    assign address_error = config_i.z_test_enable &
-                           ((config_i.z_buffer_address[3:0] != 0) | (config_i.z_buffer_pitch[3:0] != 0) |
-                            (config_i.z_buffer_pitch < ((16'(config_i.viewport_width) * 16'd2 + 16'd15) & 16'hfff0)));
+    assign address_error = config_i.z_test_enable & (config_i.z_buffer_address[3:0] != 0);
 
     always_ff @(posedge clk_i) begin
         if (triangle_accept) begin
@@ -165,8 +163,7 @@ module raster_engine_pixel_pipeline (
         .texture_i             ( config_i.texture_en          ),
         .perspective_correct_i ( config_i.perspective_correct ),
         .z_interpolation_i     ( config_i.z_interpolation     ),
-        .viewport_width_i      ( config_i.viewport_width      ),
-        .viewport_height_i     ( config_i.viewport_height     ),
+        .viewport_size_i       ( config_i.viewport_size       ),
         .scissor_enable_i      ( config_i.scissor_enable      ),
         .scissor_xmin_i        ( config_i.scissor_xmin        ),
         .scissor_xmax_i        ( config_i.scissor_xmax        ),
@@ -236,6 +233,16 @@ module raster_engine_pixel_pipeline (
         .done_o        ( raster_done  )
     );
 
+    logic [31:0] z_row_offset;
+
+    always_comb begin
+        z_row_offset = (32'(raster_y) << 9) + (32'(raster_y) << 7);
+
+        if (config_i.viewport_size == RE_VIEWPORT_640_480) begin
+            z_row_offset = z_row_offset << 1;
+        end
+    end
+
     /* Retain one unresolved span until another span or EOF determines last.
      * Two queued descriptors let the Z controller fill its back bank ahead. */
     always_ff @(posedge clk_i) begin
@@ -248,16 +255,23 @@ module raster_engine_pixel_pipeline (
         end else begin
             if (!raster_stall) begin
                 if (raster_line) pending_valid <= 1'b1;
+
                 if (raster_done) begin
                     pending_valid <= 1'b0;
                     raster_finished <= 1'b1;
                 end
             end
+
             if (span_push) span_write_ptr <= !span_write_ptr;
+
             if (span_pop) span_read_ptr <= !span_read_ptr;
+
             if (span_push != span_pop) begin
-                if (span_push) span_count <= span_count + 1'b1;
-                else span_count <= span_count - 1'b1;
+                if (span_push) begin
+                    span_count <= span_count + 1'b1;
+                end else begin
+                    span_count <= span_count - 1'b1;
+                end
             end
         end
     end
@@ -267,7 +281,7 @@ module raster_engine_pixel_pipeline (
             pending_span.first_x <= raster_x;
             pending_span.last_x <= raster_end_x;
             pending_span.y <= raster_y;
-            pending_span.address <= config_i.z_buffer_address + 32'(raster_y) * 32'(config_i.z_buffer_pitch);
+            pending_span.address <= config_i.z_buffer_address + z_row_offset;
             pending_span.last <= 1'b0;
         end
         if (span_push) begin
@@ -387,9 +401,7 @@ module raster_engine_pixel_pipeline (
         .clear_done_o         ( clear_done_o                         ),
         .clear_depth_i        ( clear_depth_i                        ),
         .clear_base_i         ( config_i.z_buffer_address            ),
-        .clear_height_i       ( config_i.viewport_height             ),
-        .clear_pitch_i        ( config_i.z_buffer_pitch              ),
-        .viewport_width_i     ( config_i.viewport_width              ),
+        .viewport_size_i      ( config_i.viewport_size               ),
         .start_i              ( depth_start                          ),
         .request_o            ( depth_request                        ),
         .line_address_i       ( front_span.address                   ),
