@@ -1,7 +1,7 @@
-`ifndef PIXEL_RASTER_PIPELINE_SV
-    `define PIXEL_RASTER_PIPELINE_SV
+`ifndef RASTER_ENGINE_PIXEL_PIPELINE_SV
+    `define RASTER_ENGINE_PIXEL_PIPELINE_SV
 
-module pixel_raster_pipeline (
+module raster_engine_pixel_pipeline (
     input logic clk_i,
     input logic rst_n_i,
     input logic stall_i,
@@ -18,6 +18,12 @@ module pixel_raster_pipeline (
     input logic texture_write_en_i,
     input logic [8:0] texture_write_address_i,
     input logic [127:0] texture_write_data_i,
+
+    /* CLEAR_Z bypasses rasterization and ignores depth test/write enables. */
+    input logic clear_valid_i,
+    output logic clear_ready_o,
+    output logic clear_done_o,
+    input logic [15:0] clear_depth_i,
 
     /* Depth DDR: every accepted command, including writes, requires a response. */
     output logic ddr_request_o,
@@ -39,7 +45,8 @@ module pixel_raster_pipeline (
     output setup_status_t status_o,
     output status_t math_status_o,
     output logic error_o,
-    output logic discard_o
+    output logic discard_o,
+    output logic z_rejected_o
 );
 
 //====================================================================================
@@ -50,6 +57,22 @@ module pixel_raster_pipeline (
     state_t state_CRT;
 
     /* Flat Z is triangle payload, not rendering configuration. */
+    logic clear_active;
+    logic clear_depth_ready, clear_available, clear_request;
+
+    assign clear_available = (state_CRT == IDLE) && !clear_active;
+    assign clear_request = clear_valid_i && clear_available;
+    assign clear_ready_o = clear_depth_ready && clear_available;
+
+    always_ff @(posedge clk_i) begin
+        if (!rst_n_i) begin
+            clear_active <= 1'b0;
+        end else if (clear_valid_i && clear_ready_o) begin
+            clear_active <= 1'b1;
+        end else if (clear_done_o) begin
+            clear_active <= 1'b0;
+        end
+    end
     logic [16:0] flat_z_ff;
 
     logic triangle_accept, setup_ready, setup_valid, setup_accept;
@@ -60,10 +83,10 @@ module pixel_raster_pipeline (
     logic [5:0] fragments_pending;
     logic pipeline_drained, pixel_accept, pixel_commit, depth_reject;
 
-    assign stall_o = !rst_n_i | (state_CRT != IDLE) | !setup_ready | stall_i;
+    assign stall_o = clear_valid_i | clear_active | !rst_n_i | (state_CRT != IDLE) | !setup_ready | stall_i;
     assign triangle_accept = valid_i & !stall_o;
     assign setup_accept = setup_valid & (state_CRT == SETUP);
-    assign busy_o = state_CRT != IDLE;
+    assign busy_o = state_CRT != IDLE || clear_active;
     assign error_o = (status_o == SETUP_MATH_ERROR) | (status_o == SETUP_INVALID_CONFIG);
     assign discard_o = status_o != SETUP_OK;
     assign address_error = config_i.z_test_enable &
@@ -353,11 +376,19 @@ module pixel_raster_pipeline (
     assign source_z = depth_value(config_i.z_interpolation ? $signed(interpolated_attributes[0]) :
                                  $signed({27'b0, flat_z_ff}));
     assign fragment_valid = config_i.z_test_enable ? depth_valid : bypass_valid_ff;
+    assign z_rejected_o = depth_reject;
     assign depth_reject = config_i.z_test_enable & depth_discard & !stall_i;
 
     z_tester #(.Z_WIDTH(16), .ADDRESS_WIDTH(32)) depth_transform (
         .clk_i                ( clk_i                                ),
         .rst_n_i              ( rst_n_i                              ),
+        .clear_valid_i        ( clear_request ),
+        .clear_ready_o        ( clear_depth_ready                    ),
+        .clear_done_o         ( clear_done_o                         ),
+        .clear_depth_i        ( clear_depth_i                        ),
+        .clear_base_i         ( config_i.z_buffer_address            ),
+        .clear_height_i       ( config_i.viewport_height             ),
+        .clear_pitch_i        ( config_i.z_buffer_pitch              ),
         .viewport_width_i     ( config_i.viewport_width              ),
         .start_i              ( depth_start                          ),
         .request_o            ( depth_request                        ),
@@ -474,6 +505,6 @@ module pixel_raster_pipeline (
     assign pipeline_drained = raster_finished & !pending_valid & (span_count == 0) & !span_active &
                               (fragments_pending == 0) & (!depth_started | depth_finished);
 
-endmodule : pixel_raster_pipeline
+endmodule : raster_engine_pixel_pipeline
 
 `endif
