@@ -154,11 +154,11 @@ module pixel_rasterizer #(
                     if (couple_CRT == TB_TM) begin
                         /* Setup initial left and right X coord */
                         if (edge_CRT[TB].is_left) begin
-                            x_left_NXT = 32'(edge_CRT[TB].x_initial);
-                            x_right_NXT = 32'(edge_CRT[TM].x_initial);
+                            x_left_NXT = edge_CRT[TB].x_initial;
+                            x_right_NXT = edge_CRT[TM].x_initial;
                         end else begin
-                            x_left_NXT = 32'(edge_CRT[TM].x_initial);
-                            x_right_NXT = 32'(edge_CRT[TB].x_initial);
+                            x_left_NXT = edge_CRT[TM].x_initial;
+                            x_right_NXT = edge_CRT[TB].x_initial;
                         end
 
 
@@ -180,9 +180,9 @@ module pixel_rasterizer #(
                     end else if (couple_CRT == TB_MB) begin
                         /* TB has already advanced to the first row of MB */
                         if (edge_CRT[TB].is_left) begin
-                            x_right_NXT = 32'(edge_CRT[MB].x_initial);
+                            x_right_NXT = edge_CRT[MB].x_initial;
                         end else begin
-                            x_left_NXT = 32'(edge_CRT[MB].x_initial);
+                            x_left_NXT = edge_CRT[MB].x_initial;
                         end
 
 
@@ -233,9 +233,9 @@ module pixel_rasterizer #(
                         state_NXT = INCREMENT_Y;
                     end else begin
                         /* Initialize interpolation before the first pixel */
-                        pixel_x_o = 10'(x_start_NXT);
-                        pixel_y_o = 9'({1'b0, y_start_CRT} + y_index_CRT);
-                        span_x_end_o = 10'(x_end_NXT);
+                        pixel_x_o = x_start_NXT[9:0];
+                        pixel_y_o = y_start_CRT + y_index_CRT[8:0];
+                        span_x_end_o = x_end_NXT[9:0];
                         
                         new_line_o = 1'b1;
                     end
@@ -246,8 +246,8 @@ module pixel_rasterizer #(
 
                     /* Emit a pixel until end of line */
                     if ({22'b0, x_index_CRT} <= (x_end_CRT - x_start_CRT)) begin
-                        pixel_x_o = 10'(x_start_CRT + {22'b0, x_index_CRT});
-                        pixel_y_o = 9'({1'b0, y_start_CRT} + y_index_CRT);
+                        pixel_x_o = x_start_CRT[9:0] + x_index_CRT[9:0];
+                        pixel_y_o = y_start_CRT + y_index_CRT[8:0];
                         pixel_valid_o = 1'b1;
                     end else begin
                         state_NXT = INCREMENT_Y;

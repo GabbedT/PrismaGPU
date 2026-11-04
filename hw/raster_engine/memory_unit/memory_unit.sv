@@ -328,7 +328,7 @@ module memory_unit (
                     texture_address <= texture_address + 32'd16;
                     texture_beat <= texture_beat + 10'd1;
 
-                    if (texture_beat + 10'd1 == texture_beats) begin
+                    if ((texture_beat + 10'd1) == texture_beats) begin
                         texture_active <= 1'b0;
                         texture_done_o <= 1'b1;
                     end
@@ -344,8 +344,7 @@ module memory_unit (
     logic [32:0] z_access_end;
 
     assign z_access_end = {1'b0, z_address_i} + 33'd16;
-    assign z_address_valid = (z_address_i[3:0] == 0) & (z_address_i >= z_base_i) &
-                             (z_access_end <= {1'b0, z_end_i});
+    assign z_address_valid = (z_address_i[3:0] == 0) & (z_address_i >= z_base_i) & (z_access_end <= {1'b0, z_end_i});
 
     assign read_request[READ_Z] = !cancel & z_request_i & !z_write_i & z_address_valid;
     assign read_address[READ_Z] = z_address_i;
@@ -355,8 +354,7 @@ module memory_unit (
     assign write_data[WRITE_Z] = z_write_data_i;
     assign write_mask[WRITE_Z] = z_mask_i;
 
-    assign z_ready_o = z_address_valid & !cancel &
-                       (z_write_i ? write_ready[WRITE_Z] : read_ready[READ_Z]);
+    assign z_ready_o = z_address_valid & !cancel & (z_write_i ? write_ready[WRITE_Z] : read_ready[READ_Z]);
     assign z_response_o = !cancel & (read_response[READ_Z] | write_response[WRITE_Z]);
     assign z_read_data_o = read_data;
 

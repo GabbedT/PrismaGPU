@@ -107,7 +107,7 @@ module texture_coordinate (
 
         for (int bit_index = 0; bit_index < 43; bit_index++) begin
             if (inv_w_i[bit_index]) begin
-                leading_one = 6'(bit_index);
+                leading_one = bit_index[5:0];
             end
         end
     end

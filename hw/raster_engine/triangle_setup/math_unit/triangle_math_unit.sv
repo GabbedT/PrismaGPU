@@ -72,9 +72,9 @@ module triangle_math_unit #(
     localparam int EDGE_ALIGN = 12;
     localparam int ATTR_ALIGN = 8;
 
-    localparam int FINAL_SHIFT = 8;
-    localparam int GRAD_RECIP_SHIFT = 38;
-    localparam int SLOPE_RECIP_SHIFT = 26;
+    localparam logic signed [8:0] FINAL_SHIFT = 9'sd8;
+    localparam logic signed [8:0] GRAD_RECIP_SHIFT = 9'sd38;
+    localparam logic signed [8:0] SLOPE_RECIP_SHIFT = 9'sd26;
 
 
     function automatic logic fits(input logic signed [87:0] value, input int width);
@@ -257,35 +257,35 @@ module triangle_math_unit #(
             add_b = '0;
 
             case (add_a_sel)
-                SRC_X0: add_a = 88'(x0_i) <<< EDGE_ALIGN;
+                SRC_X0: add_a = x0_i <<< EDGE_ALIGN;
 
-                SRC_X1: add_a = 88'(x1_i);
+                SRC_X1: add_a = x1_i;
 
-                SRC_X2: add_a = 88'(x2_i);
+                SRC_X2: add_a = x2_i;
 
-                SRC_Y1: add_a = 88'(y1_i);
+                SRC_Y1: add_a = y1_i;
 
-                SRC_Y2: add_a = 88'(y2_i);
+                SRC_Y2: add_a = y2_i;
 
-                SRC_XREF: add_a = 88'(xref_i);
+                SRC_XREF: add_a = xref_i;
 
-                SRC_YREF: add_a = 88'(yref_i);
+                SRC_YREF: add_a = yref_i;
 
-                SRC_A0: add_a = 88'(a0_i) <<< ATTR_ALIGN;
+                SRC_A0: add_a = a0_i <<< ATTR_ALIGN;
 
-                SRC_A1: add_a = 88'(a1_i);
+                SRC_A1: add_a = a1_i;
 
-                SRC_A2: add_a = 88'(a2_i);
+                SRC_A2: add_a = a2_i;
 
                 SRC_T2: add_a = t2;
             endcase
 
             case (add_b_sel)
-                SRC_X0: add_b = 88'(x0_i);
+                SRC_X0: add_b = x0_i;
 
-                SRC_Y0: add_b = 88'(y0_i);
+                SRC_Y0: add_b = y0_i;
 
-                SRC_A0: add_b = 88'(a0_i);
+                SRC_A0: add_b = a0_i;
 
                 SRC_T0: add_b = t0;
 
@@ -294,7 +294,7 @@ module triangle_math_unit #(
         end
 
     /* One shared carry chain for signed addition and subtraction, with a guard bit */
-    assign add_result = {add_a[87], add_a} + ({add_b[87], add_b} ^ {89{subtract}}) + 89'(subtract);
+    assign add_result = {add_a[87], add_a} + ({add_b[87], add_b} ^ {89{subtract}}) + subtract;
 
 
 //====================================================================================
@@ -318,7 +318,7 @@ module triangle_math_unit #(
             recip_wide = '0;
 
             case (recip_sel)
-                SRC_AREA: recip_wide = 88'(area_i);
+                SRC_AREA: recip_wide = area_i;
 
                 SRC_T0: recip_wide = t0;
             endcase
@@ -369,11 +369,11 @@ module triangle_math_unit #(
 
                 SRC_T1: mul_a_wide = t1;
 
-                SRC_SX: mul_a_wide = 88'(sx_i);
+                SRC_SX: mul_a_wide = sx_i;
 
-                SRC_GX: mul_a_wide = 88'(gx_i);
+                SRC_GX: mul_a_wide = gx_i;
 
-                SRC_GY: mul_a_wide = 88'(gy_i);
+                SRC_GY: mul_a_wide = gy_i;
             endcase
 
             case (mul_b_sel)
@@ -509,17 +509,17 @@ module triangle_math_unit #(
         if (instruction.last == LAST_OP) begin
             case (command_reg)
                 CALC_SLOPE, CALC_GRAD_X, CALC_GRAD_Y: begin
-                    shift_count = (command_reg == CALC_SLOPE ? 9'(SLOPE_RECIP_SHIFT) : 9'(GRAD_RECIP_SHIFT)) - 9'($signed(active_reciprocal.exponent));
+                    shift_count = (command_reg == CALC_SLOPE ? SLOPE_RECIP_SHIFT : GRAD_RECIP_SHIFT) - $signed(active_reciprocal.exponent);
                     output_width = 32;
                 end
 
                 CALC_EDGE_INIT: begin
-                    shift_count = 9'(FINAL_SHIFT);
+                    shift_count = FINAL_SHIFT;
                     output_width = 24;
                 end
 
                 CALC_ATTR_REF: begin
-                    shift_count = 9'(FINAL_SHIFT);
+                    shift_count = FINAL_SHIFT;
                     output_width = 44;
                 end
             endcase
@@ -555,7 +555,7 @@ module triangle_math_unit #(
                 guard_bit = raw_result[shift_count - 1];
 
                 for (int i = 0; i < 87; i++) begin
-                    if (shift_count > 9'(i + 1)) begin
+                    if (shift_count > i + 1) begin
                         sticky_bit |= raw_result[i];
                     end
                 end
@@ -574,7 +574,7 @@ module triangle_math_unit #(
                 scaled_result = raw_result <<< (-shift_count);
                 /* Discarded bits and the new sign bit must match the old sign. */
                 for (int i = 0; i < 87; i++) begin
-                    if (shift_count <= 9'(i - 87)) begin
+                    if (shift_count <= i - 87) begin
                         conversion_error |= raw_result[i] != raw_result[87];
                     end
                 end

@@ -35,14 +35,14 @@ module triangle_reciprocal (
     logic [1:0] iteration;
 
     assign extended_denominator = {denominator_reg[37], denominator_reg};
-    assign magnitude = 39'(denominator_reg[37] ? -extended_denominator : extended_denominator);
+    assign magnitude = denominator_reg[37] ? -extended_denominator : extended_denominator;
     
         always_comb begin
             leading_one = '0;
 
             for (int i = 0; i < 39; i++) begin
                 if (magnitude[i]) begin
-                    leading_one = 6'(i);
+                    leading_one = i[5:0];
                 end
             end
 
@@ -83,7 +83,7 @@ module triangle_reciprocal (
 
                 PRODUCT_XC: state_NXT = UPDATE_X;
 
-                UPDATE_X: state_NXT = iteration == 2'(NEWTON_STEPS-1) ? R_RESPONSE : PRODUCT_MX;
+                UPDATE_X: state_NXT = iteration == NEWTON_STEPS-1 ? R_RESPONSE : PRODUCT_MX;
 
                 R_RESPONSE: if (resp_ready_i) begin
                     state_NXT = R_IDLE;
@@ -131,7 +131,7 @@ module triangle_reciprocal (
                 end
 
                 SEED: begin
-                    x <= 34'(seed) << SEED_SHIFT;
+                    x <= seed << SEED_SHIFT;
                 end
 
                 PRODUCT_MX, PRODUCT_XC: begin
@@ -145,7 +145,7 @@ module triangle_reciprocal (
                 UPDATE_X: begin
                     x <= rounded_product;
                     
-                    if (iteration == 2'(NEWTON_STEPS-1)) begin
+                    if (iteration == NEWTON_STEPS-1) begin
                         result_o.mantissa <= rounded_product[33:2] + {31'b0, (rounded_product[1] & (rounded_product[0] | rounded_product[2]))};
                     end else begin
                         iteration <= iteration + 1'b1;

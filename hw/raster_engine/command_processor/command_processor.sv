@@ -219,8 +219,8 @@ module command_processor (
 
     /* Keep carry bits until after range checks. */
     assign command_next = {1'b0, command_pointer_i} + 33'd4;
-    assign primitive_limit = 35'(primitive_pointer_i) + (35'(command_CRT.payload.primitive_count) << 6);
-    assign draw_range_valid = primitive_limit <= 35'(primitive_end_i);
+    assign primitive_limit = primitive_pointer_i + (command_CRT.payload.primitive_count << 6);
+    assign draw_range_valid = primitive_limit <= primitive_end_i;
     assign texture_limit = {1'b0, command_CRT.payload.address_upper, 4'b0} + {19'b0, texture_bytes};
 
     /* Resume keeps the command and primitive ranges unchanged. */

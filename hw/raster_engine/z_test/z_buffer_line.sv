@@ -120,18 +120,18 @@ module z_buffer_line #(
             logic [SLOT_WIDTH - 1:0] port_data;
             logic [SLOT_BYTES - 1:0] port_mask;
 
-            assign pixel_write = pixel_write_enable & (buffer_select_i == 1'(bank)) & (z_write_address_i[LANE_BITS - 1:0] == LANE_BITS'(lane));
+            assign pixel_write = pixel_write_enable & (buffer_select_i == bank[0]) & (z_write_address_i[LANE_BITS - 1:0] == lane[LANE_BITS - 1:0]);
             
-            assign dma_enable = ddr_address_valid & (ddr_buffer_select_i == 1'(bank));
+            assign dma_enable = ddr_address_valid & (ddr_buffer_select_i == bank[0]);
             
-            assign port_address = pixel_write ? WORD_BITS'(z_write_address_i >> LANE_BITS) : WORD_BITS'(ddr_address_i >> LANE_BITS);
-            assign port_data = pixel_write ? SLOT_WIDTH'(z_write_data_i) : ddr_write_data_i[lane * SLOT_WIDTH +: SLOT_WIDTH];
+            assign port_address = pixel_write ? z_write_address_i[9:LANE_BITS] : ddr_address_i[9:LANE_BITS];
+            assign port_data = pixel_write ? z_write_data_i : ddr_write_data_i[lane * SLOT_WIDTH +: SLOT_WIDTH];
             assign port_mask = pixel_write ? {SLOT_BYTES{1'b1}} : ((dma_enable & ddr_write_i) ? ddr_mask[lane * SLOT_BYTES +: SLOT_BYTES] : '0);
 
                 always_ff @(posedge clk_i) begin
-                    if (pixel_read_enable & (buffer_select_i == 1'(bank)) &
-                        (z_read_address_i[LANE_BITS - 1:0] == LANE_BITS'(lane))) begin
-                        pixel_data[bank][lane] <= memory[WORD_BITS'(z_read_address_i >> LANE_BITS)];
+                    if (pixel_read_enable & (buffer_select_i == bank[0]) &
+                        (z_read_address_i[LANE_BITS - 1:0] == lane[LANE_BITS - 1:0])) begin
+                        pixel_data[bank][lane] <= memory[z_read_address_i[9:LANE_BITS]];
                     end
                 end
 
@@ -149,7 +149,7 @@ module z_buffer_line #(
         end
     end
 
-    assign z_read_data_o = z_read_enabled_o ? Z_WIDTH'(pixel_data[pixel_bank_CRT][pixel_lane_CRT]) : '0;
+    assign z_read_data_o = z_read_enabled_o ? pixel_data[pixel_bank_CRT][pixel_lane_CRT][Z_WIDTH - 1:0] : '0;
 
         always_comb begin
             ddr_read_data_o = '0;

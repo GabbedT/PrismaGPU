@@ -236,7 +236,7 @@ module raster_engine_pixel_pipeline (
     logic [31:0] z_row_offset;
 
     always_comb begin
-        z_row_offset = (32'(raster_y) << 9) + (32'(raster_y) << 7);
+        z_row_offset = (raster_y << 9) + (raster_y << 7);
 
         if (config_i.viewport_size == RE_VIEWPORT_640_480) begin
             z_row_offset = z_row_offset << 1;
@@ -511,7 +511,7 @@ module raster_engine_pixel_pipeline (
     assign pixel_commit = pixel_valid_o & !stall_i;
     always_ff @(posedge clk_i) begin
         if (!rst_n_i) fragments_pending <= '0;
-        else fragments_pending <= fragments_pending + 6'(pixel_accept) - 6'(pixel_commit) - 6'(depth_reject);
+        else fragments_pending <= fragments_pending + pixel_accept - pixel_commit - depth_reject;
     end
 
     assign pipeline_drained = raster_finished & !pending_valid & (span_count == 0) & !span_active &

@@ -79,7 +79,7 @@ module triangle_multiply_unit #(
             product_o <= '0;
         end else begin
             if (req_valid_i & req_ready_o) begin
-                product_o <= 87'($signed(operand_a_i) * $signed(operand_b_i));
+                product_o <= $signed(operand_a_i) * $signed(operand_b_i);
                 resp_valid_o <= 1'b1;
             end else if (resp_valid_o & resp_ready_i) begin
                 resp_valid_o <= 1'b0;

@@ -44,14 +44,17 @@ module memory_arbiter #(
         next_valid = 1'b0;
 
         for (int client = 0; client < CLIENTS; client++) begin
+            /* Foreach client check if it's requesting */
             if (request_i[client]) begin
+                /* If no previous client was selected take the grant */
                 if (!first_valid) begin
-                    first_client = CLIENT_WIDTH'(client);
+                    first_client = client[CLIENT_WIDTH - 1:0];
                     first_valid = 1'b1;
                 end
 
-                if (!next_valid && (CLIENT_WIDTH'(client) >= turn)) begin
-                    next_client = CLIENT_WIDTH'(client);
+                /* If client is requesting and noone has the next grant, take the turn */
+                if (!next_valid & (client[CLIENT_WIDTH - 1:0] >= turn)) begin
+                    next_client = client[CLIENT_WIDTH - 1:0];
                     next_valid = 1'b1;
                 end
             end
@@ -79,7 +82,7 @@ module memory_arbiter #(
     state_t state_CRT, state_NXT;
     logic completed, failed;
 
-    assign accept_request = (state_CRT == IDLE) && grant_valid && !abort_i;
+    assign accept_request = (state_CRT == IDLE) & grant_valid & !abort_i;
     assign completed = WRITE ? ddr.write_valid : ddr.read_valid;
     assign failed = WRITE ? ddr.write_error : ddr.read_error;
 
@@ -136,11 +139,12 @@ module memory_arbiter #(
 
             if (accept_request) begin
                 owner <= grant;
+                
                 ddr.trx_addr <= address_i[grant];
                 ddr.wdata <= WRITE ? data_i[grant] : '0;
                 ddr.wstrobe <= WRITE ? mask_i[grant] : '0;
 
-                if (grant == CLIENT_WIDTH'(CLIENTS - 1)) begin
+                if (grant == (CLIENTS - 1)) begin
                     turn <= '0;
                 end else begin
                     turn <= grant + 1'b1;

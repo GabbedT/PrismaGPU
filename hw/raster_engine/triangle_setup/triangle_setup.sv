@@ -90,7 +90,7 @@ module triangle_setup #(
 
     /* Coordinates have F8; the half-pixel boundary belongs to the lower row */
     function automatic logic signed [9:0] ceil_y(input logic signed [17:0] value);
-        return 10'(value >>> 8) + 10'(value[7:0] > 8'h80);
+        return value[17:8] + (value[7:0] > 8'h80);
     endfunction
 
     /* Decode positive 1/w to F16; retain 48 bits to check overflow before narrowing */
@@ -103,14 +103,14 @@ module triangle_setup #(
         result = {30'b0, value.mantissa};
         guard_bit = 1'b0;
         sticky_bit = 1'b0;
-        shift_count = 7'sd1 - 7'($signed(value.exponent));
+        shift_count = 7'sd1 - $signed(value.exponent);
 
         if (shift_count > 0) begin
             result = result >> shift_count;
             if (shift_count <= 18) begin
                 guard_bit = value.mantissa[shift_count - 1];
                 for (int i = 0; i < 18; i++) begin
-                    if (shift_count > 7'(i + 1)) begin
+                    if (shift_count > i + 1) begin
                         sticky_bit |= value.mantissa[i];
                     end
                 end
@@ -258,17 +258,17 @@ module triangle_setup #(
 
         always_comb begin
             /* Xmin for start of bounding box, round up if the number has fractional part greater than 0.5 */
-            bb_x_start = 11'(xmin_CRT >>> 8) + 11'(xmin_CRT[7:0] > 8'h80);
+            bb_x_start = xmin_CRT[18:8] + (xmin_CRT[7:0] > 8'h80);
 
             /* Xmax for end of bounding box, round down if the number has fractional part less than 0.5 */
-            bb_x_end = 11'(xmax_CRT >>> 8) - 11'(xmax_CRT[7:0] < 8'h80);
+            bb_x_end = xmax_CRT[18:8] - (xmax_CRT[7:0] < 8'h80);
 
             /* Ymin for start of bounding box considering Y grow from top to bottom, round up if 
              * the number has fractional part greater than 0.5 */
-            bb_y_start = 10'(ymin_CRT >>> 8) + 10'(ymin_CRT[7:0] > 8'h80);
+            bb_y_start = ymin_CRT[17:8] + (ymin_CRT[7:0] > 8'h80);
 
             /* Ymax for end of bounding box, round down if the number has fractional part less than 0.5 */
-            bb_y_end = 10'(ymax_CRT >>> 8) - 10'(ymax_CRT[7:0] < 8'h80);
+            bb_y_end = ymax_CRT[17:8] - (ymax_CRT[7:0] < 8'h80);
 
 
             /* Negative number clamping */
@@ -361,9 +361,9 @@ module triangle_setup #(
     logic signed [37:0] math_area, selected_area;
     reciprocal_t math_recip_area, selected_recip_area;
 
-    assign color_selected = (attr_idx_CRT >= 3'(ATTR_R)) & (attr_idx_CRT <= 3'(ATTR_B));
-    assign color_idx = 2'(attr_idx_CRT - 3'(ATTR_R));
-    assign plane_idx = (attr_idx_CRT == 3'(ATTR_Z)) ? 2'd0 : 2'(attr_idx_CRT - 3'(ATTR_TEX_U) + 3'd1);
+    assign color_selected = (attr_idx_CRT >= ATTR_R) & (attr_idx_CRT <= ATTR_B);
+    assign color_idx = attr_idx_CRT[1:0] - ATTR_R[1:0];
+    assign plane_idx = (attr_idx_CRT == ATTR_Z) ? 2'd0 : attr_idx_CRT[1:0] - ATTR_TEX_U[1:0] + 2'd1;
 
         /* Original vertices serve the attribute commands; edges select two endpoints */
         always_comb begin
@@ -397,8 +397,8 @@ module triangle_setup #(
         /* Present the saved F12 color gradients as F16 for the reference */
         always_comb begin
             if (color_selected) begin
-                selected_gx = 32'(color_o[color_idx].gx) <<< COLOR_SHIFT;
-                selected_gy = 32'(color_o[color_idx].gy) <<< COLOR_SHIFT;
+                selected_gx = color_o[color_idx].gx <<< COLOR_SHIFT;
+                selected_gy = color_o[color_idx].gy <<< COLOR_SHIFT;
             end else begin
                 selected_gx = attr_o[plane_idx].gx;
                 selected_gy = attr_o[plane_idx].gy;
@@ -483,13 +483,13 @@ module triangle_setup #(
 
         /* F16 to F12, nearest ties-to-even; check signed range before narrowing */
         always_comb begin
-            color_rounded = (45'($signed(math_result[43:0])) >>> COLOR_SHIFT) +
+            color_rounded = ($signed(math_result[43:0]) >>> COLOR_SHIFT) +
                             ((math_result[3] & ((math_result[2:0] != '0) | math_result[4])) ? 45'sd1 : 45'sd0);
 
             if (math_command_CRT == CALC_ATTR_REF) begin
-                color_overflow = color_rounded != 45'($signed(color_rounded[35:0]));
+                color_overflow = color_rounded != $signed(color_rounded[35:0]);
             end else begin
-                color_overflow = color_rounded != 45'($signed(color_rounded[23:0]));
+                color_overflow = color_rounded != $signed(color_rounded[23:0]);
             end
             
             color_overflow &= color_selected & (math_command_CRT == CALC_GRAD_X | math_command_CRT == CALC_GRAD_Y | math_command_CRT == CALC_ATTR_REF);
@@ -599,7 +599,7 @@ module triangle_setup #(
                 
                 /* Initialize registers */
                 triangle_NXT = triangle_i;
-                attr_idx_NXT = 3'(ATTR_Z);
+                attr_idx_NXT = ATTR_Z[2:0];
 
                 flat_r_NXT = triangle_i.vtx[0].col.r;
                 flat_g_NXT = triangle_i.vtx[0].col.g;
@@ -718,7 +718,7 @@ module triangle_setup #(
             end
 
             ATTR_SELECT: begin
-                if (attr_idx_CRT == 3'(ATTR_COUNT)) begin
+                if (attr_idx_CRT == ATTR_COUNT) begin
                     /* All attributes has been processed */
                     state_NXT = OUTPUT;
                 end else if (attr_mask[attr_idx_CRT]) begin
@@ -768,7 +768,7 @@ module triangle_setup #(
                                 state_NXT = ATTR_SELECT;
 
                                 recip_area_NXT = reciprocal_t'(math_result[40:0]);
-                                attr_idx_NXT = 3'(ATTR_Z);
+                                attr_idx_NXT = ATTR_Z[2:0];
                             end
 
                             CALC_GRAD_X: begin

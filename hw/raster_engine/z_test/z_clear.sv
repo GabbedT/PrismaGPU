@@ -82,7 +82,7 @@ module z_clear #(
         data_o = '0;
 
         for (int lane = 0; lane < LANES; lane++) begin
-            data_o[lane * SLOT +: SLOT] = SLOT'(depth_CRT);
+            data_o[lane * SLOT +: SLOT] = depth_CRT;
         end
 
         case (state_CRT)
@@ -112,7 +112,7 @@ module z_clear #(
                         done_NXT = 1'b1;
                         state_NXT = IDLE;
                     end else begin
-                        address_NXT = address_CRT + ADDRESS_WIDTH'(16);
+                        address_NXT = address_CRT + 16;
                         remaining_NXT = remaining_CRT - 1'b1;
                         state_NXT = REQUEST;
                     end

@@ -96,8 +96,8 @@ module framebuffer_access (
     always_comb begin
         viewport_width = 10'd640;
         viewport_height = 9'd480;
-        pixel_row = (15'(pixel_y_i) << 5) - (15'(pixel_y_i) << 1);
-        blend_row = (15'(blend_y_i) << 5) - (15'(blend_y_i) << 1);
+        pixel_row = (pixel_y_i << 5) - (pixel_y_i << 1);
+        blend_row = (blend_y_i << 5) - (blend_y_i << 1);
 
         if (viewport_size_i == RE_VIEWPORT_320_240) begin
             viewport_width = 10'd320;
@@ -108,10 +108,10 @@ module framebuffer_access (
         end
 
         /* RGB444: 3*x nibbles; every row starts on a DDR word. */
-        pixel_tripled_x = (12'(pixel_x_i) << 1) + 12'(pixel_x_i);
-        blend_tripled_x = (12'(blend_x_i) << 1) + 12'(blend_x_i);
-        pixel_word = pixel_row + 15'(pixel_tripled_x[11:5]);
-        blend_word = blend_row + 15'(blend_tripled_x[11:5]);
+        pixel_tripled_x = (pixel_x_i << 1) + pixel_x_i;
+        blend_tripled_x = (blend_x_i << 1) + blend_x_i;
+        pixel_word = pixel_row + pixel_tripled_x[11:5];
+        blend_word = blend_row + blend_tripled_x[11:5];
         pixel_offset = {pixel_tripled_x[4:0], 2'b0};
         blend_pixel_offset = {blend_tripled_x[4:0], 2'b0};
         pixel_address = {1'b0, base_i} + {14'b0, pixel_word, 4'b0};
@@ -136,15 +136,18 @@ module framebuffer_access (
     assign pixel_ready_o = state == ACCEPT && !abort_i && !flush_i && !blend_valid_i && dirty_bits != '1;
     assign blend_ready_o = state == ACCEPT && !abort_i && !flush_i && !blend_valid_o && dirty_bits != '1;
     assign idle_o = state == ACCEPT && dirty_bits == 0 && !blend_valid_o;
-    assign read_request_o = !abort_i && (state == RMW_REQUEST || state == BLEND_REQUEST);
+    assign read_request_o = !abort_i && (state == RMW_REQUEST | state == BLEND_REQUEST);
     assign read_address_o = state == RMW_REQUEST ? buffer_address : blend_address;
     assign write_request_o = !abort_i && state == WRITE_REQUEST;
     assign write_address_o = buffer_address;
     assign write_data_o = write_buffer;
+
     always_comb begin
         partial_byte = 1'b0;
+
         for (int b = 0; b < 16; b++) begin
             write_mask_o[b] = |dirty_bits[8*b +: 8];
+
             if (dirty_bits[8*b +: 8] != 0 && dirty_bits[8*b +: 8] != 8'hff) begin
                 partial_byte = 1'b1;
             end
@@ -157,7 +160,7 @@ module framebuffer_access (
 //====================================================================================
 
     always_ff @(posedge clk_i) begin
-        if (!rst_n_i || abort_i) begin
+        if (!rst_n_i | abort_i) begin
             state <= ACCEPT;
             return_state <= ACCEPT;
             write_buffer <= '0;
@@ -185,7 +188,7 @@ module framebuffer_access (
             end
             case (state)
                 ACCEPT: begin
-                    if (flush_i || dirty_bits == '1) begin
+                    if (flush_i | dirty_bits == '1) begin
                         if (dirty_bits != 0) begin
                             return_state <= ACCEPT;
                             state <= FLUSH;
@@ -216,7 +219,7 @@ module framebuffer_access (
                         end else begin
                             pending_address <= pixel_address[31:0];
                             pending_y <= pixel_y_i;
-                            pending_data <= 140'(pixel_i) << pixel_offset;
+                            pending_data <= pixel_i << pixel_offset;
                             pending_mask <= 140'hfff << pixel_offset;
                             state <= MERGE;
                         end
@@ -224,7 +227,7 @@ module framebuffer_access (
                 end
 
                 MERGE: begin
-                    if (dirty_bits != 0 && (buffer_address != pending_address || buffer_y != pending_y)) begin
+                    if (dirty_bits != 0 && (buffer_address != pending_address | buffer_y != pending_y)) begin
                         return_state <= MERGE;
                         state <= FLUSH;
                     end else begin
@@ -337,7 +340,7 @@ module framebuffer_access (
                     return_state <= ACCEPT;
                 end
 
-                if (state == BLEND || state == BLEND_REQUEST || state == BLEND_WAIT) begin
+                if (state == BLEND | state == BLEND_REQUEST | state == BLEND_WAIT) begin
                     state <= ACCEPT;
                 end
             end

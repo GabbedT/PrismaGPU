@@ -361,9 +361,9 @@ module raster_engine_registers (
         read_data_o = '0;
 
         case (read_address)
-            RE_CTRL: read_data_o = 32'(control_read);
+            RE_CTRL: read_data_o = control_read;
             
-            RE_STATUS: read_data_o = 32'(status_register);
+            RE_STATUS: read_data_o = status_register;
             
             RE_FRMBUF_BEGIN: read_data_o = framebuffer_base;
             RE_FRMBUF_END: read_data_o = framebuffer_end;
@@ -375,25 +375,25 @@ module raster_engine_registers (
 
             RE_PRIM_END: read_data_o = primitive_buffer_end;
             
-            RE_IRQ_EN: read_data_o = 32'(enable_interrupt);
+            RE_IRQ_EN: read_data_o = enable_interrupt;
 
-            RE_IRQ_PEND: read_data_o = 32'(pending_interrupt);
+            RE_IRQ_PEND: read_data_o = pending_interrupt;
             
             RE_ZBUF_BASE: read_data_o = z_buffer_base;
 
             RE_ZBUF_END: read_data_o = z_buffer_end;
             
-            RE_DRAW_CFG: read_data_o = 32'(draw_config);
+            RE_DRAW_CFG: read_data_o = draw_config;
 
-            RE_Z_CFG: read_data_o = 32'(z_config);
+            RE_Z_CFG: read_data_o = z_config;
             
-            RE_TEX_CFG: read_data_o = 32'(texture_config);
+            RE_TEX_CFG: read_data_o = texture_config;
 
-            RE_VP_CFG: read_data_o = 32'(viewport_config);
+            RE_VP_CFG: read_data_o = viewport_config;
             
-            RE_SCISSOR_X: read_data_o = 32'(scissor_x);
+            RE_SCISSOR_X: read_data_o = scissor_x;
             
-            RE_SCISSOR_Y: read_data_o = 32'(scissor_y);
+            RE_SCISSOR_Y: read_data_o = scissor_y;
             
             RE_CMD_PTR: read_data_o = command_pointer_i;
             

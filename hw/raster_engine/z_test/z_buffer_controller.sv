@@ -189,7 +189,7 @@ module z_buffer_controller #(
             buffer_ddr_mask_o = word_mask;
             ddr_request_o = 1'b0;
             ddr_write_o = 1'b0;
-            ddr_address_o = address_CRT[transfer_CRT] + (ADDRESS_WIDTH'(word_CRT) << BYTE_SHIFT);
+            ddr_address_o = address_CRT[transfer_CRT] + (word_CRT << BYTE_SHIFT);
             ddr_write_data_o = data_CRT;
             ddr_mask_o = word_mask;
 
@@ -295,7 +295,7 @@ module z_buffer_controller #(
                             bank_NXT[transfer_CRT] = READY;
                             memory_NXT = MEMORY_IDLE;
                         end else begin
-                            word_NXT = word_CRT + 10'(LANES);
+                            word_NXT = word_CRT + LANES[9:0];
                             memory_NXT = FILL_REQUEST;
                         end
                     end
@@ -317,7 +317,7 @@ module z_buffer_controller #(
                             dirty_NXT[transfer_CRT] = 1'b0;
                             memory_NXT = MEMORY_IDLE;
                         end else begin
-                            word_NXT = word_CRT + 10'(LANES);
+                            word_NXT = word_CRT + LANES[9:0];
                             memory_NXT = EVICT_READ;
                         end
                     end
@@ -337,7 +337,7 @@ module z_buffer_controller #(
                             dirty_NXT[transfer_CRT] = 1'b0;
                             memory_NXT = MEMORY_IDLE;
                         end else begin
-                            word_NXT = word_CRT + 10'(LANES);
+                            word_NXT = word_CRT + LANES[9:0];
                             memory_NXT = EVICT_READ;
                         end
                     end
