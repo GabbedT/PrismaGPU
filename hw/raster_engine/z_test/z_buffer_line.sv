@@ -141,7 +141,7 @@ module z_buffer_line #(
         end
     end
 
-    assign z_read_data_o = z_read_enabled_o ? pixel_data[pixel_bank_CRT][pixel_lane_CRT] : '0;
+    assign z_read_data_o = z_read_enabled_o ? Z_WIDTH'(pixel_data[pixel_bank_CRT][pixel_lane_CRT]) : '0;
 
         always_comb begin
             ddr_read_data_o = '0;
