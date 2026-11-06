@@ -49,6 +49,7 @@ package re_registers_pkg;
 
         /* Viewport and Scissor */
         RE_VP_CFG         = 6'h0D, /* 0x34: RW */
+        RE_BLEND_CFG      = 6'h0E, /* 0x38: RW, enable[4], constant alpha[3:0] */
         RE_SCISSOR_X      = 6'h0F, /* 0x3C: RW */
         RE_SCISSOR_Y      = 6'h10, /* 0x40: RW */
 
@@ -143,7 +144,7 @@ package re_registers_pkg;
     /* RE_TEX_CFG[1:0]; reuse the texturizer's 8/16/32/64 encoding.
      * Texture RAM retains its fixed physical stride of 64 texels. */
     typedef struct packed {
-        texture_size_t texture_size; /* [1:0] */
+        texturizer_pkg::texture_size_t texture_size; /* [1:0] */
     } re_texture_config_t;
 
 

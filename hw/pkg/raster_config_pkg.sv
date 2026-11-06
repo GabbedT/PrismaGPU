@@ -8,9 +8,11 @@ package raster_config_pkg;
         logic texture_en;
         logic perspective_correct;
         logic z_interpolation;
+        logic blend_enable;
+        logic [3:0] blend_alpha;
 
         /* Fixed dimensions and row strides follow RE_VP_CFG. */
-        re_viewport_size_t viewport_size;
+        re_registers_pkg::re_viewport_size_t viewport_size;
 
         logic scissor_enable;
         logic [9:0] scissor_xmin;
@@ -18,7 +20,7 @@ package raster_config_pkg;
         logic [8:0] scissor_ymin;
         logic [8:0] scissor_ymax;
 
-        texture_size_t texture_size;
+        texturizer_pkg::texture_size_t texture_size;
 
         logic z_test_enable;
         logic z_write_enable;
