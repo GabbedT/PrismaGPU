@@ -37,9 +37,17 @@ module viewport_transform (
                          ($signed(vertex_i.pos.y) > 32'sd65792) ||
                          (vertex_i.pos.z > 32'd65792);
 
-    /* This is (1.0 + x) and (1.0 - y) */
-    assign x_offset = 19'sd65536 + $signed(vertex_i.pos.x[17:0]);
-    assign y_offset = 19'sd65536 - $signed(vertex_i.pos.y[17:0]);
+    /* Clip-plane coordinates can overshoot by the accepted reciprocal-LUT error.
+     * Snap that numerical fringe to +/-1 before viewport mapping, so raster setup
+     * receives [0,width] / [0,height]. Larger errors still fail range_error above.
+     * Culling computes area from these final rounded coordinates. */
+    assign x_offset = $signed(vertex_i.pos.x) < -32'sd65536 ? 19'sd0 :
+                      $signed(vertex_i.pos.x) >  32'sd65536 ? 19'sd131072 :
+                      19'sd65536 + $signed(vertex_i.pos.x[17:0]);
+    
+    assign y_offset = $signed(vertex_i.pos.y) >  32'sd65536 ? 19'sd0 :
+                      $signed(vertex_i.pos.y) < -32'sd65536 ? 19'sd131072 :
+                      19'sd65536 - $signed(vertex_i.pos.y[17:0]);
 
     assign x_scaled = x_offset * $signed({1'b0, width_screen_i[9:0]});
     assign y_scaled = y_offset * $signed({1'b0, height_screen_i[8:0]});
