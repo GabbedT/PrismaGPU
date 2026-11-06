@@ -4,7 +4,10 @@
 module prismaGPU #(
     parameter integer INPUT_FIFO_DEPTH  = 16,
     parameter integer TRIANGLE_DEPTH    = 2,
-    parameter integer OUTPUT_FIFO_DEPTH = 16
+    parameter integer OUTPUT_FIFO_DEPTH = 16,
+    
+    // Match triangle_multiply_ip PipeStages when building with _VIVADO_.
+    parameter integer MULTIPLIER_LATENCY = 0
 ) (
     input logic clk_i,
     input logic rst_n_i,
@@ -113,7 +116,7 @@ module prismaGPU #(
 //      RASTER ENGINE
 //====================================================================================
 
-    raster_engine re (
+    raster_engine #(.MULTIPLIER_LATENCY(MULTIPLIER_LATENCY)) re (
         .clk_i                    ( clk_i                                ),
         .rst_n_i                  ( rst_n_i                              ),
         .interrupt_o              ( re_interrupt                         ),
