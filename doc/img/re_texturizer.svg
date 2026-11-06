@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650" role="img" aria-labelledby="title desc">
+  <title id="title">Texturizer data paths</title>
+  <desc id="desc">Fragment attributes feed perspective coordinate reconstruction while color and position are delayed. Coordinates select a texel from texture memory, and the aligned fragment and texel leave together. Texture loading uses an independent write path.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10z" fill="#52677e"/></marker>
+    <style>
+      .bg{fill:#f5f8fc}.panel{fill:#fff;stroke:#d5deea;stroke-width:2}.input{fill:#eee9fb;stroke:#9682c5;stroke-width:2}.math{fill:#fff0d4;stroke:#d7a43f;stroke-width:2}.memory{fill:#e8f2fc;stroke:#82a3c7;stroke-width:2}.payload{fill:#edf3fb;stroke:#7895b4;stroke-width:2}.output{fill:#e4f5f1;stroke:#59a69d;stroke-width:2}.title{font:700 23px sans-serif;fill:#1c2d42}.label{font:700 16px sans-serif;fill:#24384e}.small{font:14px sans-serif;fill:#53677d}.arrow{fill:none;stroke:#52677e;stroke-width:2.4;marker-end:url(#arrow)}.dash{fill:none;stroke:#8b7ab0;stroke-width:2;stroke-dasharray:7 5;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="650" rx="18"/><text class="title" x="40" y="48">Texturizer · aligned fragment and texel paths</text><rect class="panel" x="30" y="72" width="1140" height="540" rx="18"/>
+  <rect class="input" x="65" y="250" width="190" height="110" rx="16"/><text class="label" x="160" y="286" text-anchor="middle">Input fragment</text><text class="small" x="160" y="313" text-anchor="middle">U/W · V/W · inv/W</text><text class="small" x="160" y="337" text-anchor="middle">RGB · X/Y · valid</text>
+  <rect class="math" x="345" y="135" width="230" height="115" rx="16"/><text class="label" x="460" y="174" text-anchor="middle">Coordinate recovery</text><text class="small" x="460" y="202" text-anchor="middle">shared reciprocal lookup</text><text class="small" x="460" y="225" text-anchor="middle">parallel U and V arithmetic</text>
+  <rect class="memory" x="650" y="135" width="205" height="115" rx="16"/><text class="label" x="752" y="174" text-anchor="middle">Clamp and address</text><text class="small" x="752" y="202" text-anchor="middle">nearest texel</text><text class="small" x="752" y="225" text-anchor="middle">size-specific bounds</text>
+  <rect class="memory" x="930" y="135" width="190" height="115" rx="16"/><text class="label" x="1025" y="174" text-anchor="middle">Texture memory</text><text class="small" x="1025" y="202" text-anchor="middle">read word, select lane</text><text class="small" x="1025" y="225" text-anchor="middle">RGBA4444 texel</text>
+  <rect class="payload" x="345" y="355" width="510" height="100" rx="16"/><text class="label" x="600" y="392" text-anchor="middle">Matching payload delay</text><text class="small" x="600" y="422" text-anchor="middle">RGB · X/Y · size · valid travel with the coordinate result</text>
+  <rect class="output" x="930" y="355" width="190" height="100" rx="16"/><text class="label" x="1025" y="392" text-anchor="middle">Output fragment</text><text class="small" x="1025" y="422" text-anchor="middle">aligned RGB/X/Y + texel</text>
+  <rect class="input" x="650" y="500" width="205" height="70" rx="14"/><text class="label" x="752" y="530" text-anchor="middle">Texture loader</text><text class="small" x="752" y="552" text-anchor="middle">independent 128-bit writes</text>
+  <path class="arrow" d="M255 280 H295 V192 H345"/><text class="small" x="300" y="228">attributes</text>
+  <path class="arrow" d="M575 192 H650"/><path class="arrow" d="M855 192 H930"/>
+  <path class="arrow" d="M255 330 H300 V405 H345"/><text class="small" x="302" y="386">payload</text>
+  <path class="arrow" d="M855 405 H930"/><path class="arrow" d="M1025 250 V305 H805 V355"/><text class="small" x="917" y="298" text-anchor="middle">texel and valid</text>
+  <path class="arrow" d="M752 500 V455"/>
+  <path class="dash" d="M160 360 V540 H345"/><text class="small" x="245" y="532" text-anchor="middle">global stall holds both paths</text>
+  <text class="small" x="75" y="590">Untextured or invalid-coordinate fragments still use the payload path; the texel-valid marker distinguishes them.</text>
+</svg>

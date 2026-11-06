@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="670" viewBox="0 0 1200 670" role="img" aria-labelledby="title desc">
+  <title id="title">Raster Engine command processor connections</title>
+  <desc id="desc">Software configures and starts the processor. Commands flow from memory to the processor, which coordinates primitive fetch, texture and depth services, and the pixel pipeline before reporting completion or errors.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10z" fill="#50657d"/></marker>
+    <style>
+      .bg{fill:#f5f8fc}.frame{fill:#fff;stroke:#d7e0ea;stroke-width:2}.software{fill:#eee9fb;stroke:#9682c5;stroke-width:2}.memory{fill:#e8f2fc;stroke:#82a3c7;stroke-width:2}.processor{fill:#fff0d4;stroke:#d7a43f;stroke-width:2.5}.pipeline{fill:#e4f5f1;stroke:#59a69d;stroke-width:2}.status{fill:#fce9ea;stroke:#d8878d;stroke-width:2}.title{font:700 24px sans-serif;fill:#1c2d42}.label{font:700 18px sans-serif;fill:#24384e}.small{font:14px sans-serif;fill:#53677d}.arrow{fill:none;stroke:#50657d;stroke-width:2.5;marker-end:url(#arrow)}.control{fill:none;stroke:#9a7b31;stroke-width:2.2;stroke-dasharray:7 5;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="670" rx="18"/>
+  <text class="title" x="42" y="48">Command processor in the Raster Engine</text>
+  <rect class="frame" x="32" y="74" width="1136" height="555" rx="18"/>
+  <rect class="software" x="75" y="132" width="235" height="110" rx="16"/>
+  <text class="label" x="192" y="175" text-anchor="middle">Software</text>
+  <text class="small" x="192" y="203" text-anchor="middle">command list · ranges</text>
+  <text class="small" x="192" y="224" text-anchor="middle">START · STOP · reset</text>
+  <rect class="memory" x="75" y="350" width="235" height="130" rx="16"/>
+  <text class="label" x="192" y="392" text-anchor="middle">Memory unit</text>
+  <text class="small" x="192" y="420" text-anchor="middle">command and primitive fetch</text>
+  <text class="small" x="192" y="443" text-anchor="middle">texture · depth · framebuffer</text>
+  <rect class="processor" x="430" y="210" width="325" height="240" rx="22"/>
+  <text class="label" x="592" y="260" text-anchor="middle">Command processor</text>
+  <rect x="468" y="285" width="249" height="46" rx="10" fill="#fff" stroke="#e1c37e"/>
+  <text class="small" x="592" y="314" text-anchor="middle">fetch and decode in order</text>
+  <rect x="468" y="347" width="249" height="68" rx="10" fill="#fff" stroke="#e1c37e"/>
+  <text class="small" x="592" y="376" text-anchor="middle">validate · start work · wait</text>
+  <text class="small" x="592" y="399" text-anchor="middle">commit only after completion</text>
+  <rect class="pipeline" x="850" y="132" width="255" height="122" rx="16"/>
+  <text class="label" x="977" y="176" text-anchor="middle">Pixel pipeline</text>
+  <text class="small" x="977" y="205" text-anchor="middle">processes each triangle</text>
+  <text class="small" x="977" y="228" text-anchor="middle">reports completion or error</text>
+  <rect class="memory" x="850" y="350" width="255" height="130" rx="16"/>
+  <text class="label" x="977" y="392" text-anchor="middle">Memory services</text>
+  <text class="small" x="977" y="420" text-anchor="middle">load texture · clear depth</text>
+  <text class="small" x="977" y="443" text-anchor="middle">finish framebuffer writes</text>
+  <rect class="status" x="430" y="520" width="325" height="72" rx="15"/>
+  <text class="label" x="592" y="551" text-anchor="middle">Software-visible status</text>
+  <text class="small" x="592" y="575" text-anchor="middle">busy · paused · done · notify ID · errors</text>
+  <path class="control" d="M310 185 H430"/>
+  <path class="arrow" d="M310 390 H430"/>
+  <path class="control" d="M755 280 H850"/>
+  <path class="control" d="M755 390 H850"/>
+  <path class="arrow" d="M850 222 H795 V325 H755"/>
+  <path class="arrow" d="M850 436 H795 V415 H755"/>
+  <path class="control" d="M592 450 V520"/>
+  <text class="small" x="370" y="171" text-anchor="middle">configure / control</text>
+  <text class="small" x="370" y="376" text-anchor="middle">commands / records</text>
+  <text class="small" x="802" y="263" text-anchor="middle">triangle handoff</text>
+  <text class="small" x="802" y="376" text-anchor="middle">texture / clear / drain</text>
+  <text class="small" x="818" y="315" text-anchor="middle">complete / error</text>
+  <text class="small" x="818" y="461" text-anchor="middle">memory status</text>
+  <path class="arrow" d="M430 555 H310 V242"/>
+  <text class="small" x="357" y="541" text-anchor="middle">poll status</text>
+</svg>

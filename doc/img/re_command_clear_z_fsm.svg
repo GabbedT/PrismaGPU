@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="360" viewBox="0 0 1120 360" role="img" aria-labelledby="title desc">
+  <title id="title">CLEAR_Z command flow</title>
+  <desc id="desc">The processor validates the command payload and depth surface, holds a clear request until the depth service accepts it, waits for all depth writes to finish, and commits.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10z" fill="#52677e"/></marker>
+    <style>
+      .bg{fill:#f5f8fc}.panel{fill:#fff;stroke:#d5deea;stroke-width:2}.state{fill:#edf3fb;stroke:#7895b4;stroke-width:2}.run{fill:#e4f5f1;stroke:#59a69d;stroke-width:2}.wait{fill:#fff1d7;stroke:#d7a43f;stroke-width:2}.fault{fill:#fce9ea;stroke:#d8878d;stroke-width:2}.title{font:700 22px sans-serif;fill:#1c2d42}.label{font:700 16px sans-serif;fill:#24384e}.small{font:14px sans-serif;fill:#53677d}.arrow{fill:none;stroke:#52677e;stroke-width:2.3;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect class="bg" width="1120" height="360" rx="18"/><text class="title" x="38" y="42">CLEAR_Z · depth surface fill</text><rect class="panel" x="28" y="62" width="1064" height="270" rx="18"/>
+  <rect class="state" x="55" y="135" width="190" height="78" rx="16"/><text class="label" x="150" y="167" text-anchor="middle">VALIDATE</text><text class="small" x="150" y="190" text-anchor="middle">payload + depth range</text>
+  <rect class="run" x="320" y="135" width="190" height="78" rx="16"/><text class="label" x="415" y="167" text-anchor="middle">REQUEST CLEAR</text><text class="small" x="415" y="190" text-anchor="middle">hold until accepted</text>
+  <rect class="wait" x="585" y="135" width="220" height="78" rx="16"/><text class="label" x="695" y="167" text-anchor="middle">WAIT FOR CLEAR</text><text class="small" x="695" y="190" text-anchor="middle">depth writes complete</text>
+  <rect class="state" x="880" y="135" width="170" height="78" rx="16"/><text class="label" x="965" y="167" text-anchor="middle">COMMIT</text><text class="small" x="965" y="190" text-anchor="middle">continue command list</text>
+  <rect class="fault" x="355" y="250" width="220" height="60" rx="15"/><text class="label" x="465" y="276" text-anchor="middle">ERROR_DRAIN</text><text class="small" x="465" y="297" text-anchor="middle">invalid payload / address / bus</text>
+  <path class="arrow" d="M245 174 H320"/><text class="small" x="282" y="158" text-anchor="middle">valid</text>
+  <path class="arrow" d="M510 174 H585"/><text class="small" x="547" y="158" text-anchor="middle">clear accepted</text>
+  <path class="arrow" d="M805 174 H880"/><text class="small" x="842" y="158" text-anchor="middle">clear done</text>
+  <path class="arrow" d="M150 213 V280 H355"/><text class="small" x="236" y="267" text-anchor="middle">invalid</text>
+  <path class="arrow" d="M695 213 V280 H575"/><text class="small" x="700" y="267" text-anchor="middle">memory error</text>
+</svg>

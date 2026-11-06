@@ -15,11 +15,10 @@ containing all three processed vertices and the signed doubled screen area.
 It has the same bits as the packed format below, without word serialization.
 
 The raster engine accepts a complete triangle on each rising clock edge
-where ``raster_valid_o=1``. There is no ready or stall input from the raster
-engine; it must have capacity for every valid transfer, including transfers
-on consecutive cycles. Data is meaningful only with valid asserted. Clearing
-GE enable or asserting hardware/soft reset suppresses raster valid, so a
-triangle held while the GE is disabled is not transferred repeatedly.
+where ``raster_valid_o && !raster_stall_i``. A valid triangle remains stable
+while the receiver stalls, and that backpressure propagates through GE to
+its input FIFO. Clearing GE enable or asserting hardware/soft reset suppresses
+raster valid; disabled/reset cycles do not transfer a triangle.
 STOP pauses input consumption while in-flight triangles continue to drain.
 
 In this mode the packer accepts no new triangles and its backpressure cannot
@@ -29,12 +28,13 @@ words already accepted in memory mode remain buffered and may still serialize
 or be read; selecting raster mode does not flush them. Soft reset flushes both
 paths while preserving configuration.
 
-The destination setting is live. Change it with no affected pipeline data in
-flight, and drain pending memory output or use soft reset before switching
+Writes that change the destination are rejected while input or pipeline data
+remains. Drain pending memory output or use soft reset before switching
 jobs if no earlier DDR output should remain. Clearing ``raster_forward``
 restores packer acceptance and backpressure. ``GE_TRI_OUTPUT`` counts accepted
 triangles in either mode; DONE and interrupts still use the existing external
-completion input, with no automatic raster completion event.
+completion input. The integrated wrapper provides separate raster completion;
+see :doc:`../integration`.
 
 .. figure:: ../img/ge_packer.svg
    :alt: Processed triangles routed to the packer queues or directly to the raster engine

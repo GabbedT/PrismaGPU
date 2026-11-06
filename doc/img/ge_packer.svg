@@ -29,7 +29,9 @@
 <path d="M 200 70 L 200 205 L 215 205" fill="none" stroke="#2563a6" stroke-width="2" marker-end="url(#arrow)"/>
 <rect x="215" y="160" width="350" height="90" rx="10" fill="#e0ecfa" stroke="#2563a6" stroke-width="2"/>
 <text x="390" y="196" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">Raster engine</text>
-<text x="390" y="221" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">512-bit triangle + valid (no ready)</text>
+<text x="390" y="221" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#143454">512-bit triangle + valid / stall</text>
 <text x="590" y="210" font-family="sans-serif" font-size="14" fill="#334155">raster_forward = 1: bypass packer and DDR output</text>
-<text x="25" y="315" font-family="sans-serif" font-size="14" fill="#334155">Memory mode: low bits first; full queues apply backpressure. Raster mode: accept every valid triangle.</text>
+<path d="M 300 250 L 300 275 L 105 275 L 105 115" fill="none" stroke="#2563a6" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+<text x="320" y="280" font-family="sans-serif" font-size="14" fill="#334155">raster_stall_i: hold triangle and stall GE</text>
+<text x="25" y="315" font-family="sans-serif" font-size="14" fill="#334155">Memory mode: low bits first; full queues stall GE. Raster mode: transfer when valid and not stalled.</text>
 </svg>

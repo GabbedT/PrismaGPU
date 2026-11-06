@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="480" viewBox="0 0 1200 480" role="img" aria-labelledby="title desc">
+  <title id="title">DRAW command flow</title>
+  <desc id="desc">A zero-count DRAW commits immediately. Otherwise the processor validates configuration and address ranges, streams triangles through the pipeline while tracking accepted and completed work, flushes the framebuffer once the batch is done, then commits.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10z" fill="#52677e"/></marker>
+    <style>
+      .bg{fill:#f5f8fc}.panel{fill:#fff;stroke:#d5deea;stroke-width:2}.state{fill:#edf3fb;stroke:#7895b4;stroke-width:2}.run{fill:#e4f5f1;stroke:#59a69d;stroke-width:2}.wait{fill:#fff1d7;stroke:#d7a43f;stroke-width:2}.fault{fill:#fce9ea;stroke:#d8878d;stroke-width:2}.title{font:700 22px sans-serif;fill:#1c2d42}.label{font:700 16px sans-serif;fill:#24384e}.small{font:14px sans-serif;fill:#53677d}.arrow{fill:none;stroke:#52677e;stroke-width:2.3;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="480" rx="18"/><text class="title" x="38" y="42">DRAW · batch execution</text><rect class="panel" x="28" y="62" width="1144" height="390" rx="18"/>
+  <rect class="state" x="60" y="145" width="175" height="76" rx="16"/><text class="label" x="147" y="176" text-anchor="middle">DRAW DECODED</text><text class="small" x="147" y="199" text-anchor="middle">read requested count</text>
+  <polygon points="335,125 410,183 335,241 260,183" fill="#fff1d7" stroke="#d7a43f" stroke-width="2"/><text class="label" x="335" y="179" text-anchor="middle">count</text><text class="label" x="335" y="199" text-anchor="middle">zero?</text>
+  <rect class="state" x="485" y="110" width="220" height="82" rx="16"/><text class="label" x="595" y="143" text-anchor="middle">VALIDATE DRAW</text><text class="small" x="595" y="168" text-anchor="middle">configuration + full ranges</text>
+  <rect class="run" x="790" y="110" width="300" height="110" rx="16"/><text class="label" x="940" y="144" text-anchor="middle">START / DRAW_RUN</text><text class="small" x="940" y="170" text-anchor="middle">start fetch; transfer triangles while</text><text class="small" x="940" y="192" text-anchor="middle">setup, rasterization, and pixel tail overlap</text>
+  <rect class="wait" x="790" y="300" width="300" height="82" rx="16"/><text class="label" x="940" y="333" text-anchor="middle">DRAW_DRAIN</text><text class="small" x="940" y="358" text-anchor="middle">flush once; wait for framebuffer idle</text>
+  <rect class="state" x="485" y="300" width="220" height="82" rx="16"/><text class="label" x="595" y="333" text-anchor="middle">COMMIT</text><text class="small" x="595" y="358" text-anchor="middle">retire completed DRAW</text>
+  <rect class="fault" x="260" y="315" width="170" height="70" rx="16"/><text class="label" x="345" y="345" text-anchor="middle">ERROR_DRAIN</text><text class="small" x="345" y="367" text-anchor="middle">command not committed</text>
+  <path class="arrow" d="M235 183 H260"/><path class="arrow" d="M410 183 H485"/><text class="small" x="445" y="167" text-anchor="middle">nonzero</text>
+  <path class="arrow" d="M335 241 V274 H595 V300"/><text class="small" x="430" y="269" text-anchor="middle">zero · no work</text>
+  <path class="arrow" d="M705 151 H790"/><text class="small" x="747" y="135" text-anchor="middle">valid</text>
+  <path class="arrow" d="M595 192 V260 H345 V315"/><text class="small" x="455" y="249" text-anchor="middle">invalid config / range</text>
+  <path class="arrow" d="M940 220 V300"/><text class="small" x="1015" y="263" text-anchor="middle">all accepted and completed;</text><text class="small" x="1015" y="281" text-anchor="middle">pipeline idle</text>
+  <path class="arrow" d="M790 341 H705"/><text class="small" x="748" y="326" text-anchor="middle">framebuffer idle</text>
+</svg>

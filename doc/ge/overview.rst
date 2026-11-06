@@ -69,7 +69,8 @@ to the system's memory integration.
 
 Direct raster mode adds a valid signal and a 512-bit processed triangle
 output. It avoids packing and DDR writes for newly processed triangles.
-There is no ready input: the raster engine must accept every valid transfer.
+A transfer occurs only when valid is high and ``raster_stall_i`` is low;
+receiver backpressure freezes GE until setup can accept the triangle.
 The packer's backpressure is ignored in this mode. Input memory transfers
 remain the same. See :doc:`packer` for details.
 

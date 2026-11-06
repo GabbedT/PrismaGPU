@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="320" viewBox="0 0 1120 320" role="img" aria-labelledby="title desc">
+  <title id="title">Valid textured fragment path</title>
+  <desc id="desc">A valid positive perspective denominator recovers U/V, coordinates are clamped and converted to a texel address, and a texel is read and aligned with the delayed fragment.</desc>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10z" fill="#52677e"/></marker><style>.bg{fill:#f5f8fc}.box{fill:#fff;stroke:#d5deea;stroke-width:2}.input{fill:#eee9fb;stroke:#9682c5;stroke-width:2}.math{fill:#fff0d4;stroke:#d7a43f;stroke-width:2}.memory{fill:#e8f2fc;stroke:#82a3c7;stroke-width:2}.output{fill:#e4f5f1;stroke:#59a69d;stroke-width:2}.title{font:700 21px sans-serif;fill:#1c2d42}.label{font:700 16px sans-serif;fill:#24384e}.small{font:14px sans-serif;fill:#53677d}.arrow{fill:none;stroke:#52677e;stroke-width:2.4;marker-end:url(#arrow)}</style></defs>
+  <rect class="bg" width="1120" height="320" rx="18"/><text class="title" x="35" y="40">Texturing enabled · valid perspective attributes</text><rect class="box" x="25" y="58" width="1070" height="230" rx="18"/>
+  <rect class="input" x="45" y="125" width="180" height="82" rx="15"/><text class="label" x="135" y="157" text-anchor="middle">Fragment input</text><text class="small" x="135" y="182" text-anchor="middle">positive inv/W</text>
+  <rect class="math" x="280" y="125" width="190" height="82" rx="15"/><text class="label" x="375" y="157" text-anchor="middle">Recover U and V</text><text class="small" x="375" y="182" text-anchor="middle">perspective divide</text>
+  <rect class="memory" x="525" y="125" width="190" height="82" rx="15"/><text class="label" x="620" y="157" text-anchor="middle">Clamp and index</text><text class="small" x="620" y="182" text-anchor="middle">nearest texel</text>
+  <rect class="memory" x="770" y="125" width="150" height="82" rx="15"/><text class="label" x="845" y="157" text-anchor="middle">Read texel</text><text class="small" x="845" y="182" text-anchor="middle">RGBA4444</text>
+  <rect class="output" x="965" y="125" width="105" height="82" rx="15"/><text class="label" x="1017" y="157" text-anchor="middle">Output</text><text class="small" x="1017" y="182" text-anchor="middle">valid texel</text>
+  <path class="arrow" d="M225 166 H280"/><path class="arrow" d="M470 166 H525"/><path class="arrow" d="M715 166 H770"/><path class="arrow" d="M920 166 H965"/>
+  <text class="small" x="555" y="245">RGB and X/Y follow a matching delay path and emerge with the selected texel.</text>
+</svg>

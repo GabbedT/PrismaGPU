@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="340" viewBox="0 0 1080 340" role="img" aria-labelledby="title desc">
+  <title id="title">Invalid perspective denominator path</title>
+  <desc id="desc">When the perspective denominator is nonpositive, sampling is suppressed. The fragment payload still travels through the aligned delay path and emerges valid without a valid texel.</desc>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10z" fill="#52677e"/></marker><style>.bg{fill:#f5f8fc}.box{fill:#fff;stroke:#d5deea;stroke-width:2}.input{fill:#eee9fb;stroke:#9682c5;stroke-width:2}.math{fill:#fff1d7;stroke:#d7a43f;stroke-width:2}.delay{fill:#edf3fb;stroke:#7895b4;stroke-width:2}.output{fill:#e4f5f1;stroke:#59a69d;stroke-width:2}.title{font:700 21px sans-serif;fill:#1c2d42}.label{font:700 16px sans-serif;fill:#24384e}.small{font:14px sans-serif;fill:#53677d}.arrow{fill:none;stroke:#52677e;stroke-width:2.4;marker-end:url(#arrow)}.dash{fill:none;stroke:#c25761;stroke-width:2.3;stroke-dasharray:7 5}</style></defs>
+  <rect class="bg" width="1080" height="340" rx="18"/><text class="title" x="35" y="40">Texturing enabled · nonpositive inv/W</text><rect class="box" x="25" y="58" width="1030" height="235" rx="18"/>
+  <rect class="input" x="55" y="130" width="190" height="82" rx="15"/><text class="label" x="150" y="162" text-anchor="middle">Fragment input</text><text class="small" x="150" y="187" text-anchor="middle">inv/W ≤ 0</text>
+  <rect class="math" x="335" y="130" width="225" height="82" rx="15"/><text class="label" x="447" y="162" text-anchor="middle">Suppress texture read</text><text class="small" x="447" y="187" text-anchor="middle">no usable U/V</text>
+  <rect class="delay" x="650" y="130" width="190" height="82" rx="15"/><text class="label" x="745" y="162" text-anchor="middle">Carry fragment</text><text class="small" x="745" y="187" text-anchor="middle">RGB and X/Y delayed</text>
+  <rect class="output" x="900" y="130" width="125" height="82" rx="15"/><text class="label" x="962" y="162" text-anchor="middle">Output</text><text class="small" x="962" y="187" text-anchor="middle">valid; no texel</text>
+  <path class="arrow" d="M245 171 H335"/><path class="arrow" d="M560 171 H650"/><path class="arrow" d="M840 171 H900"/>
+  <path class="dash" d="M447 212 V250 H745 V212"/><text class="small" x="595" y="274" text-anchor="middle">sample memory is bypassed; texture_valid stays low</text>
+</svg>

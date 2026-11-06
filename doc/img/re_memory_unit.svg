@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">Geometry engine memory unit</title>
+  <desc id="desc">Five read clients and two write clients connect through separate round-robin arbiters to DDR. Framebuffer access includes a pixel buffer and blend cache.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#53677d"/></marker>
+    <marker id="arrow-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#168b87"/></marker>
+    <style>
+      .bg{fill:#f5f8fc}.panel{fill:#fff;stroke:#d5deea;stroke-width:2}.client{fill:#edf3fb;stroke:#93a9c5;stroke-width:1.5}.fb{fill:#e5f5f2;stroke:#59a69d;stroke-width:2}.arb{fill:#fff2d6;stroke:#dda83e;stroke-width:2}.ddr{fill:#273b55;stroke:#182a40;stroke-width:2}.title{font:700 23px sans-serif;fill:#1c2d42}.label{font:600 16px sans-serif;fill:#24384e}.small{font:14px sans-serif;fill:#50647b}.white{font:700 19px sans-serif;fill:#fff}.line{fill:none;stroke:#53677d;stroke-width:2.5;marker-end:url(#arrow)}.teal{fill:none;stroke:#168b87;stroke-width:2.5;marker-end:url(#arrow-teal)}.bus{fill:none;stroke:#8395aa;stroke-width:2}
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="720" rx="18"/>
+  <text class="title" x="40" y="48">Geometry engine memory unit</text>
+  <rect class="panel" x="35" y="75" width="1130" height="590" rx="18"/>
+
+  <text class="small" x="65" y="115">READ CLIENTS</text>
+  <rect class="client" x="65" y="135" width="235" height="54" rx="10"/><text class="label" x="182" y="168" text-anchor="middle">Command fetch</text>
+  <rect class="client" x="65" y="205" width="235" height="54" rx="10"/><text class="label" x="182" y="238" text-anchor="middle">Primitive fetch</text>
+  <rect class="client" x="65" y="275" width="235" height="54" rx="10"/><text class="label" x="182" y="308" text-anchor="middle">Texture loader</text>
+  <rect class="client" x="65" y="345" width="235" height="54" rx="10"/><text class="label" x="182" y="378" text-anchor="middle">Depth reads</text>
+
+  <rect class="fb" x="65" y="430" width="235" height="170" rx="12"/>
+  <text class="label" x="182" y="460" text-anchor="middle">Framebuffer access</text>
+  <rect x="88" y="477" width="190" height="42" rx="8" fill="#fff" stroke="#8ec9c1"/><text class="small" x="183" y="503" text-anchor="middle">Pixel write buffer</text>
+  <rect x="88" y="535" width="190" height="42" rx="8" fill="#fff" stroke="#8ec9c1"/><text class="small" x="183" y="561" text-anchor="middle">Blend read cache</text>
+
+  <rect class="arb" x="430" y="235" width="225" height="120" rx="16"/>
+  <text class="label" x="542" y="279" text-anchor="middle">Read arbiter</text>
+  <text class="small" x="542" y="307" text-anchor="middle">round-robin · one active read</text>
+  <text class="small" x="542" y="330" text-anchor="middle">response returned to owner</text>
+
+  <rect class="client" x="65" y="615" width="235" height="36" rx="9"/><text class="small" x="182" y="639" text-anchor="middle">Depth writes</text>
+  <rect class="arb" x="430" y="495" width="225" height="120" rx="16"/>
+  <text class="label" x="542" y="539" text-anchor="middle">Write arbiter</text>
+  <text class="small" x="542" y="567" text-anchor="middle">round-robin · one active write</text>
+  <text class="small" x="542" y="590" text-anchor="middle">response returned to owner</text>
+
+  <rect class="ddr" x="850" y="300" width="235" height="190" rx="18"/>
+  <text class="white" x="967" y="368" text-anchor="middle">External DDR</text>
+  <text x="967" y="405" text-anchor="middle" style="font:14px sans-serif;fill:#cdd8e6">read channel</text>
+  <line x1="890" y1="420" x2="1045" y2="420" stroke="#758aa3" stroke-width="1.5"/>
+  <text x="967" y="453" text-anchor="middle" style="font:14px sans-serif;fill:#cdd8e6">write channel</text>
+
+  <path class="line" d="M300 162 H350 V255 H430"/><path class="line" d="M300 232 H365 V275 H430"/><path class="line" d="M300 302 H380 V295 H430"/><path class="line" d="M300 372 H395 V320 H430"/><path class="line" d="M300 495 H370 V340 H430"/>
+  <path class="line" d="M655 295 H850"/>
+  <path class="line" d="M300 633 H365 V555 H430"/><path class="line" d="M300 560 H390 V580 H430"/>
+  <path class="line" d="M655 555 H850"/>
+
+  <text class="small" x="750" y="275" text-anchor="middle">address / request</text>
+  <text class="small" x="750" y="530" text-anchor="middle">address / data / byte mask</text>
+  <rect x="685" y="625" width="430" height="26" rx="8" fill="#edf3fb"/>
+  <text class="small" x="900" y="643" text-anchor="middle">Independent read and write paths; each serializes its own transactions</text>
+</svg>

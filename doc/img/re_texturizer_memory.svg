@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1050" height="350" viewBox="0 0 1050 350" role="img" aria-labelledby="title desc">
+  <title id="title">Texture RAM read and load paths</title>
+  <desc id="desc">The sampler reads a selected texel through a synchronous read port. An independent loader writes complete 128-bit words into the fixed-stride texture allocation.</desc>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10z" fill="#52677e"/></marker><style>.bg{fill:#f5f8fc}.box{fill:#fff;stroke:#d5deea;stroke-width:2}.memory{fill:#e8f2fc;stroke:#82a3c7;stroke-width:2}.sampler{fill:#fff0d4;stroke:#d7a43f;stroke-width:2}.loader{fill:#eee9fb;stroke:#9682c5;stroke-width:2}.title{font:700 21px sans-serif;fill:#1c2d42}.label{font:700 16px sans-serif;fill:#24384e}.small{font:14px sans-serif;fill:#53677d}.arrow{fill:none;stroke:#52677e;stroke-width:2.4;marker-end:url(#arrow)}</style></defs>
+  <rect class="bg" width="1050" height="350" rx="18"/><text class="title" x="35" y="40">Texture memory · independent read and write ports</text><rect class="box" x="25" y="58" width="1000" height="260" rx="18"/>
+  <rect class="sampler" x="65" y="110" width="230" height="76" rx="15"/><text class="label" x="180" y="142" text-anchor="middle">Sampler</text><text class="small" x="180" y="166" text-anchor="middle">texel address</text>
+  <rect class="memory" x="410" y="110" width="235" height="150" rx="18"/><text class="label" x="527" y="148" text-anchor="middle">64 × 64 RGBA4444</text><text class="small" x="527" y="177" text-anchor="middle">512 words · 8 texels per word</text><text class="small" x="527" y="201" text-anchor="middle">smaller images use fixed row stride</text><text class="small" x="527" y="230" text-anchor="middle">same-edge read/write returns old word</text>
+  <rect class="loader" x="755" y="190" width="225" height="76" rx="15"/><text class="label" x="867" y="222" text-anchor="middle">Texture loader</text><text class="small" x="867" y="246" text-anchor="middle">128-bit word + address</text>
+  <path class="arrow" d="M295 128 H410"/><text class="small" x="352" y="115" text-anchor="middle">read address</text>
+  <path class="arrow" d="M410 170 H295"/><text class="small" x="352" y="163" text-anchor="middle">read result</text>
+  <path class="arrow" d="M755 228 H690 V240 H645"/><text class="small" x="699" y="258" text-anchor="middle">write word</text>
+</svg>

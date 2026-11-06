@@ -30,9 +30,12 @@ nearest, with halfway cases toward the greater value. The viewport requires
 positive dimensions no larger than 640×480. Before narrowing, it rejects X/Y
 outside ±65792 raw F16 units and Z outside [0,65792] raw F16 units. The
 unsigned Z comparison also rejects negative signed representations. Small
-reciprocal-LUT overshoot and off-screen X/Y within those limits are retained.
-The viewport does not clamp out-of-range coordinates; it discards the complete
-triangle using the existing perspective error indication.
+reciprocal-LUT overshoot within those limits is snapped to normalized -1/+1
+before mapping X/Y. This keeps final coordinates inside [0,W] and [0,H], as
+required by raster setup. It corrects only the accepted numerical fringe;
+larger out-of-range inputs still discard the complete triangle through the
+existing perspective error indication. Culling computes area after this
+correction, so area and final vertex coordinates remain consistent.
 
 Ideally, normalized (0,0) maps to (W/2,H/2), (−1,+1) maps to (0,0), and
 (+1,−1) maps to (W,H). The endpoint is W or H rather than W−1 or H−1;

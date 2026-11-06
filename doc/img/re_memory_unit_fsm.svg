@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700" role="img" aria-labelledby="title desc">
+  <title id="title">Memory transaction and framebuffer state diagrams</title>
+  <desc id="desc">The upper diagram shows idle, present request, and wait for response states. The lower diagram summarizes framebuffer accept, merge, flush, read modify write, and blend read phases.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#53677d"/></marker>
+    <style>
+      .bg{fill:#f5f8fc}.panel{fill:#fff;stroke:#d5deea;stroke-width:2}.state{fill:#edf3fb;stroke:#7592b2;stroke-width:2}.green{fill:#e5f5f2;stroke:#59a69d;stroke-width:2}.gold{fill:#fff2d6;stroke:#dda83e;stroke-width:2}.title{font:700 22px sans-serif;fill:#1c2d42}.label{font:700 16px sans-serif;fill:#24384e}.small{font:14px sans-serif;fill:#53677d}.arrow{fill:none;stroke:#53677d;stroke-width:2.3;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="700" rx="18"/>
+  <text class="title" x="40" y="48">Memory service state diagrams</text>
+
+  <rect class="panel" x="35" y="75" width="1130" height="230" rx="18"/>
+  <text class="title" x="65" y="112">DDR transaction (shared by each arbiter)</text>
+  <rect class="state" x="135" y="170" width="190" height="72" rx="18"/><text class="label" x="230" y="199" text-anchor="middle">IDLE</text><text class="small" x="230" y="222" text-anchor="middle">choose waiting client</text>
+  <rect class="gold" x="500" y="170" width="220" height="72" rx="18"/><text class="label" x="610" y="199" text-anchor="middle">PRESENT</text><text class="small" x="610" y="222" text-anchor="middle">hold request until accepted</text>
+  <rect class="green" x="890" y="170" width="220" height="72" rx="18"/><text class="label" x="1000" y="199" text-anchor="middle">WAIT RESPONSE</text><text class="small" x="1000" y="222" text-anchor="middle">wait for completion / error</text>
+  <path class="arrow" d="M325 206 H500"/><text class="small" x="412" y="190" text-anchor="middle">request selected</text>
+  <path class="arrow" d="M720 206 H890"/><text class="small" x="805" y="190" text-anchor="middle">DDR ready</text>
+  <path class="arrow" d="M1000 242 V270 H230 V242"/><text class="small" x="615" y="291" text-anchor="middle">response received; notify owner</text>
+
+  <rect class="panel" x="35" y="330" width="1130" height="335" rx="18"/>
+  <text class="title" x="65" y="368">Framebuffer access (simplified)</text>
+  <rect class="state" x="75" y="430" width="170" height="76" rx="17"/><text class="label" x="160" y="460" text-anchor="middle">ACCEPT</text><text class="small" x="160" y="483" text-anchor="middle">pixel or blend input</text>
+  <rect class="green" x="330" y="410" width="175" height="76" rx="17"/><text class="label" x="417" y="440" text-anchor="middle">MERGE</text><text class="small" x="417" y="463" text-anchor="middle">pack pixels in word</text>
+  <rect class="gold" x="600" y="410" width="175" height="76" rx="17"/><text class="label" x="687" y="440" text-anchor="middle">FLUSH</text><text class="small" x="687" y="463" text-anchor="middle">send buffered word</text>
+  <rect class="state" x="865" y="390" width="230" height="76" rx="17"/><text class="label" x="980" y="420" text-anchor="middle">READ–MODIFY–WRITE</text><text class="small" x="980" y="443" text-anchor="middle">partial byte needs old data</text>
+  <rect class="state" x="865" y="520" width="230" height="76" rx="17"/><text class="label" x="980" y="550" text-anchor="middle">WRITE WORD</text><text class="small" x="980" y="573" text-anchor="middle">wait for write response</text>
+  <rect class="green" x="330" y="535" width="245" height="76" rx="17"/><text class="label" x="452" y="565" text-anchor="middle">BLEND DESTINATION READ</text><text class="small" x="452" y="588" text-anchor="middle">cache hit or one / two reads</text>
+
+  <path class="arrow" d="M245 452 H330"/><text class="small" x="287" y="438" text-anchor="middle">pixel</text>
+  <path class="arrow" d="M160 506 V573 H330"/><text class="small" x="242" y="565" text-anchor="middle">blend</text>
+  <path class="arrow" d="M505 448 H600"/><text class="small" x="552" y="433" text-anchor="middle">buffer full / switch</text>
+  <path class="arrow" d="M775 448 H865"/><text class="small" x="820" y="431" text-anchor="middle">partial byte</text>
+  <path class="arrow" d="M687 486 V498 H820 V558 H865"/><text class="small" x="790" y="516" text-anchor="middle">whole bytes</text>
+  <path class="arrow" d="M980 466 V520"/><text class="small" x="1035" y="499">read completes</text>
+  <path class="arrow" d="M980 596 V625 H160 V506"/><text class="small" x="560" y="647" text-anchor="middle">write completes; resume pending step</text>
+  <path class="arrow" d="M330 573 H270 V490 H245"/><text class="small" x="282" y="598" text-anchor="middle">pixel returned</text>
+  <path class="arrow" d="M417 486 V630 H160 V506"/><text class="small" x="285" y="651" text-anchor="middle">merge complete or buffer sent</text>
+</svg>
