@@ -29,6 +29,7 @@ texturizer/texel_memory.sv
 texturizer/texturizer.sv
 
 pixel_blender/pixel_blender.sv
+pixel_blender/framebuffer_blender.sv
 
 raster_engine_pixel_pipeline.sv
 raster_engine_registers.sv

@@ -105,7 +105,7 @@ module raster_engine_registers (
 
             RE_CMD_BASE, RE_CMD_END, RE_PRIM_BASE, RE_PRIM_END,
             RE_ZBUF_BASE, RE_ZBUF_END, RE_FRMBUF_BEGIN, RE_FRMBUF_END, RE_DRAW_CFG, RE_Z_CFG, RE_TEX_CFG,
-            RE_VP_CFG, RE_SCISSOR_X, RE_SCISSOR_Y: begin
+            RE_VP_CFG, RE_BLEND_CFG, RE_SCISSOR_X, RE_SCISSOR_Y: begin
                 write_address_valid = 1'b1;
                 configuration_write = 1'b1;
             end
@@ -120,7 +120,8 @@ module raster_engine_registers (
     assign write_blocked = (configuration_write & busy_i) |
                            ((write_address == RE_CTRL) & write_strobe_i[0] &
                             (write_data_i[0][4] != passthrough_o) & (busy_i | paused_i));
-    assign read_address_valid = (read_address <= RE_VP_CFG) |
+                            
+    assign read_address_valid = (read_address <= RE_BLEND_CFG) |
                                 ((read_address >= RE_SCISSOR_X) & (read_address <= RE_FRMBUF_END)) |
                                 ((read_address >= RE_TRI_INPUT) & (read_address <= RE_CYCLES));
     
@@ -296,6 +297,7 @@ module raster_engine_registers (
 //====================================================================================
 
     re_draw_config_t draw_config;
+    logic [4:0] blend_config;
     re_z_config_t z_config;
     re_texture_config_t texture_config;
     re_scissor_x_t scissor_x;
@@ -305,6 +307,7 @@ module raster_engine_registers (
         always_ff @(posedge clk_i `ifdef ASYNC or negedge rst_n_i `endif) begin
             if (!rst_n_i) begin
                 draw_config <= '0;
+                blend_config <= '0;
                 z_config <= '0;
                 texture_config <= '0;
                 scissor_x <= '0;
@@ -314,6 +317,8 @@ module raster_engine_registers (
                 case (write_address)
                     RE_DRAW_CFG: draw_config <= re_draw_config_t'(masked_data[4:0] | (draw_config & ~mask[4:0]));
                     
+                    RE_BLEND_CFG: blend_config <= masked_data[4:0] | (blend_config & ~mask[4:0]);
+
                     RE_Z_CFG: z_config <= re_z_config_t'(masked_data[4:0] | (z_config & ~mask[4:0]));
                     
                     RE_TEX_CFG: texture_config <= re_texture_config_t'(masked_data[1:0] | (texture_config & ~mask[1:0]));
@@ -337,6 +342,8 @@ module raster_engine_registers (
 
     always_comb begin
         config_o = '0;
+        config_o.blend_enable = blend_config[4];
+        config_o.blend_alpha = blend_config[3:0];
         config_o.gouraud_shading = draw_config.gouraud_shading;
         config_o.texture_en = draw_config.texture_en;
         config_o.perspective_correct = draw_config.perspective_correct;
@@ -391,6 +398,8 @@ module raster_engine_registers (
             RE_ZBUF_END: read_data_o = z_buffer_end;
             
             RE_DRAW_CFG: read_data_o = draw_config;
+
+            RE_BLEND_CFG: read_data_o = blend_config;
 
             RE_Z_CFG: read_data_o = z_config;
             

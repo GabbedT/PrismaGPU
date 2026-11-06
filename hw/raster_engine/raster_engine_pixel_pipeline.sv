@@ -1,7 +1,9 @@
 `ifndef RASTER_ENGINE_PIXEL_PIPELINE_SV
     `define RASTER_ENGINE_PIXEL_PIPELINE_SV
 
-module raster_engine_pixel_pipeline (
+module raster_engine_pixel_pipeline #(
+    parameter integer MULTIPLIER_LATENCY = 0
+) (
     input logic clk_i,
     input logic rst_n_i,
     input logic stall_i,
@@ -258,7 +260,7 @@ module raster_engine_pixel_pipeline (
     logic [3:0] flat_r, flat_g, flat_b;
 
     /* OUTPUT holds the next descriptor until the active context is free */
-    triangle_setup setup_transform (
+    triangle_setup #(.MULTIPLIER_LATENCY(MULTIPLIER_LATENCY)) setup_transform (
         .clk_i                 ( clk_i                        ),
         .rst_n_i               ( rst_n_i                      ),
         .triangle_valid_i      ( triangle_accept              ),
