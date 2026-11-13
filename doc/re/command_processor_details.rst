@@ -90,6 +90,11 @@ client acceptance, with no multi-beat lock. Address, data and owner are held
 until completion; delayed responses cannot be redirected to a new client.
 The internal ready signal means the arbiter has captured and reserved the
 request, not necessarily that the external controller accepted it yet.
+External completion data and error are captured atomically, then delivered
+to the reserved client during a separate response cycle. The arbiter remains
+non-idle through delivery, including while aborting, so barriers still wait
+for every response. This adds one clock per DDR transaction and removes raw
+DDR completion/error inputs from execution and register-status paths.
 
 Fetch and execution
 -------------------
@@ -101,6 +106,15 @@ must be readable ordinary memory, even if their unused bytes lie outside the
 logical command range. No new command beat is fetched while a command executes.
 
 CMD_PTR remains on the current command until it completes successfully.
+At command acceptance, the controller records whether the full 33-bit
+``CMD_PTR + 4`` equals ``CMD_END``. While that command is active, this flag
+drives ``CMD_EXHAUSTED``; an already empty/retired list uses pointer equality.
+The status therefore still marks the last command before retirement, including
+long operations and pauses, without putting an increment on the status-read
+path. Reset clears command ownership, so it cannot expose a stale last flag.
+``make -C tb/verilator test-control`` checks this across command lanes, high
+addresses, NOTIFY/resume, empty lists and reset during the final command.
+
 PRIM_PTR advances when a complete 64-byte primitive transfers to the pipeline.
 The memory unit assembles four 128-bit words, low bits first, into the GE's
 512-bit ``proc_triangle_t``. It can assemble one subsequent primitive while
@@ -185,6 +199,14 @@ PAUSED it resumes saved pointers and invalidates prefetched commands. Rendering
 configuration may change while paused. Changing command/primitive BASE/END
 before resuming raises a configuration error; use software reset for a new list.
 
+Command/primitive buffer validity, framebuffer/depth surface bounds and the
+texture/perspective configuration check are registered before execution
+control consumes them. START already enters INITIALIZE for one clock, so
+configuration supplied together with START is checked before memory is
+initialized, without adding another initialization state. Configuration
+remains stable while BUSY; paused reconfiguration is sampled before resume.
+The full 33-bit surface limits retain overflow detection.
+
 Unknown opcodes and unused payload bits raise command_error. Invalid rendering
 configuration raises config_error; bounds, alignment, overflow and DDR access
 failures raise address_error. Arithmetic failures raise math_error. Errors
@@ -206,15 +228,14 @@ From the repository root:
 
 .. code-block:: console
 
-   make -C tb/re/command_processor lint test
-   make -C tb/re/registers lint test
-   make -C tb/re/z_test lint test WIDTHS=16
-   make -C tb/re/pixel_raster_pipeline test
+   make -C tb/verilator test-control
+   make -C tb/verilator test
 
-The dedicated memory model delays read/write acceptance and completion and
-makes writes visible only at completion. Directed tests cover arbitration,
-packed pixel conservation, split pixels, cache hits, command lanes/tails,
-texture mapping, overlapping triangles with Z access, clear padding, STOP,
-NOTIFY/resume, invalid commands/ranges, bus errors and resets with delayed
-responses. The pixel pipeline regression also compares full frames against
-an independent software reference with and without timing stalls.
+The directed control test changes configuration together with START and
+checks both viewport sizes, buffer alignment, empty lists, short ranges,
+32-bit overflow, configuration-error priority, and disabled depth checks.
+It verifies that invalid Z reads/writes never reach DDR, that their error is
+registered, and that cancellation or initialization clears the fault event.
+The firmware integration checks textured, depth-tested and blended images,
+direct/buffered rendering, slower memory, deterministic replay and watchdog
+failure reporting.

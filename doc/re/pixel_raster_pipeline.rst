@@ -17,7 +17,7 @@ The sequence is:
        -> pixel_rasterizer (span mode)
        -> pending span + two-entry descriptor queue
        -> span walker / pixel_interpolator
-       -> z_tester + matching payload register
+       -> z_tester + two matching payload registers
        -> texturizer
        -> pixel_blender
        -> RGB444 + X/Y + pixel_valid
@@ -120,6 +120,14 @@ stream behavior. In span mode, ``new_line_o`` carries inclusive X bounds
 and Y for each nonempty row; its transfer is gated by ``!stall_i``. Empty
 rows are skipped and ``done_o`` follows the final span. A stall holds its
 FSM and payload, and reset takes priority over the stall.
+Span mode uses a dedicated emission cycle after captured X bounds pass
+rounding, clipping and empty-row tests. FIFO enables therefore depend on
+registered state, adding one cycle per nonempty span. The ordinary pixel
+mode retains its original schedule. Both modes use the same signed F12
+half-pixel boundary rule: the left bound increments the integer part only
+above 0.5, and the inclusive right bound decrements it at or below 0.5.
+``make -C tb/verilator test-rasterizer`` checks both modes against independent
+signed division across half boundaries, empty rows, clipping and stalls.
 
 The wrapper retains one pending span until either another nonempty span
 or end-of-triangle establishes whether it is last. Two additional queued
@@ -127,6 +135,10 @@ descriptors feed the Z controller's first/lookahead interfaces. This
 handles trailing empty rows without guessing the last span from the
 bounding-box Y limit. A full queue stops span generation without stopping
 depth-memory service or draining pixels.
+The pending descriptor captures X and Y first. Its Z row address is computed
+from that held Y when the descriptor enters the queue, separating address
+generation from the rasterizer's span rounding and clipping. This uses the
+existing pending stage and adds no scheduling cycles.
 
 With depth enabled, the controller fills its front bank and prefetches the
 next span into its back bank. The wrapper retains the corresponding Y
@@ -136,22 +148,60 @@ stage accepts a fragment. This preserves attributes across variable DDR
 latency, bank swaps and output stalls, without a fragment FIFO.
 
 With depth testing disabled, queued spans feed the pixel walker directly,
-and no depth DDR transaction is issued. A one-cycle bypass register has
-the same payload timing as the depth result stage.
+and no depth DDR transaction is issued. Its payload still uses a one-cycle
+bypass; enabled depth testing uses a BRAM read stage and a separate registered
+comparison result.
 
-``stall_i`` holds texturizer and blender registers. The depth tester may
-accept one fragment into an empty result register during that hold; the
-external X/Y/color/UV register captures on exactly the same acceptance.
-Otherwise the walker and interpolator stop until the result can advance.
+``stall_i`` holds texturizer and blender registers. The two elastic depth
+stages may continue accepting until both are occupied. Their matching
+X/Y/color/UV payload registers advance separately: the first on fragment
+acceptance, the second on ``result_load_o``. A stalled result keeps its own
+payload stable. Once both slots are occupied, the walker and interpolator
+stop until the result can advance.
 Consume RGB on ``rst_n_i && pixel_valid_o && !stall_i``. A valid output
 remains stable during backpressure.
 
 Inside a ready span, throughput is one fragment per advancing clock.
-After walker acceptance, the depth/bypass register, texturizer and blender
-take 1 + 10 + 4 advancing edges, including the acceptance edge. Startup,
+After walker acceptance, enabled depth testing, texturizer and blender
+take 2 + 10 + 4 advancing edges, including the acceptance edge. The depth
+bypass retains 1 + 10 + 4 edges. Startup,
 row transitions, setup and memory service add variable latency. Setup of
 the next triangle overlaps the current triangle's rasterization. Z writeback
 still forms a boundary between the two raster contexts.
+
+Retirement always captures the remaining fragment count and status into the
+tail context. An already empty tail reports completion on the following clock,
+adding one cycle for triangles whose pixels have all drained at retirement.
+A nonempty tail still completes on its final output acceptance. Empty-tail
+completion tests the captured count, keeping fragment-admission logic and
+counter arithmetic out of the status-selection path. A pending error blocks
+new setup acceptance throughout this extra completion cycle.
+
+The setup math unit validates each microinstruction's opcode, destinations
+and signed operand widths in a separate ``VALIDATE`` cycle before ``ISSUE``.
+The registered result gates unit requests and arithmetic capture. The same
+cycle also captures the signed shift count, output width and conversion
+enable, sign correction and the selected 88-bit add/sub operands, separating
+parameter/source decoding from arithmetic and overflow checks. The 89-bit
+guarded adder and all fixed-point scales are retained. The reciprocal captures
+the unsigned 39-bit denominator magnitude on request acceptance before its
+existing normalization cycle; the minimum signed 38-bit value stays exact.
+Result representability selects among fixed signed widths (18, 19, 24, 32,
+33, 44 or 88 bits), using constant sign-extension checks instead of a variable
+shift. This preserves the exact limits without adding an execution cycle.
+Validation adds one clock per executed microinstruction; arithmetic widths,
+signedness, rounding and response backpressure are unchanged. Operands and configuration
+remain stable until the command response is consumed.
+``make -C tb/verilator test-math`` checks all six programs with independent
+integer arithmetic, exact reciprocal cases, signed rounding, extreme shifts,
+error statuses, reset and response stalls. It runs both the normal multiplier
+and a behavioral model of the three-stage Vivado multiplier interface.
+
+Setup selects edge endpoints before row rounding and clamping, using one
+extra preparation cycle per edge. It captures each math response, color
+conversion and error status together before writeback, adding one clock per
+math command. This keeps conversion checks out of descriptor register enables.
+Results, span ownership and pipeline completion ordering are unchanged.
 
 Depth and texture memory
 ------------------------
@@ -165,8 +215,10 @@ with the same saturation. ``config_i.z_compare`` follows :doc:`z_test` and
 ``config_i.z_buffer_address`` is the byte address of row zero and must be
 16-byte aligned when depth testing is enabled. Invalid alignment rejects
 the draw. The fixed row stride is 1280 bytes for VGA and 640 for QVGA.
-A registered span address adds ``(y << 10) + (y << 8)`` for VGA or
-``(y << 9) + (y << 7)`` for QVGA, with Y extended before shifting. The caller provides
+A queued span address adds ``(y << 10) + (y << 8)`` for VGA or
+``(y << 9) + (y << 7)`` for QVGA. The unsigned offset is calculated as
+``5*y`` in 128-byte units, doubled for VGA; thirteen bits preserve the whole
+product before conversion to a 32-bit byte address. The caller provides
 enough address space for the framebuffer-sized depth allocation and
 initializes depth contents before drawing.
 
@@ -279,6 +331,12 @@ outstanding DDR ownership in its memory unit.
 
 Streaming regression
 --------------------
+
+Run ``make -C tb/verilator test-span-address`` for the span queue's address
+and ordering checks. It exercises the final rows of both viewport modes,
+32-bit address wrapping, trailing empty rows, output backpressure and reset
+with pending/queued spans. ``make -C tb/verilator test`` runs the firmware
+regression, including depth-enabled draws and slower DDR service.
 
 Run ``make -C tb/re/pixel_raster_pipeline overlap`` to exercise consecutive
 triangle delivery with immediate and delayed DDR responses and output

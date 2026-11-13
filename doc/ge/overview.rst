@@ -36,7 +36,16 @@ How the stages work together
 The unpacker reconstructs vertices from input words. The matrix transforms
 one vertex at a time, and a triangle buffer gathers three transformed
 vertices. Clipping needs the whole triangle, so this buffer retains it
-until the visible polygon has been processed.
+until the visible polygon has been processed. Its full signal depends only
+on stored occupancy. After clipping accepts the triangle, the producer's
+held vertex enters on the following cycle. This adds one reuse cycle per
+triangle and keeps clipping decisions out of matrix-stage backpressure.
+Pipeline BUSY uses that retained triangle ownership and the registered vertex
+after clipping, so clip-plane comparisons do not feed register status or
+configuration-write protection. The final clip vertex remains covered after
+the input triangle is released.
+``make -C tb/verilator test-triangle-buffer`` checks vertex ordering, held
+sources at triangle completion, stalls and reset.
 
 An entirely visible triangle passes through clipping unchanged. A partially
 visible triangle is cut against the six boundaries of the viewing volume;
@@ -69,12 +78,17 @@ to the system's memory integration.
 
 Direct raster mode adds a valid signal and a 512-bit processed triangle
 output. It avoids packing and DDR writes for newly processed triangles.
-A transfer occurs only when valid is high and ``raster_stall_i`` is low;
-receiver backpressure freezes GE until setup can accept the triangle.
+A transfer occurs only when valid is high and ``raster_stall_i`` is low.
+A two-entry output queue holds complete triangles in order. Its registered
+occupancy backpressures the geometry pipeline when full, separating receiver
+ready/error logic from the GE's stage enables. At occupancy one it supports
+simultaneous input/output each clock. Queued triangles remain part of BUSY
+and must drain before changing output mode or signalling stream end.
 The packer's backpressure is ignored in this mode. Input memory transfers
 remain the same. See :doc:`packer` for details.
 
-The standard configuration buffers 16 input words and 16 output words.
+The standard configuration buffers 16 input words, 16 packed output words,
+and two complete triangles in the direct raster output queue.
 The input producer must respect the available capacity; an excess write
 can be lost. Output reads return one queued word after a clock edge.
 FIFO means first in, first out: words leave in the order they arrived.

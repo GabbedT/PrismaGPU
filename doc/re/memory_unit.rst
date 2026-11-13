@@ -72,6 +72,24 @@ writes use the shared write path with a 16-byte mask. The ready signal
 indicates that the chosen path accepted the request; the response signal
 marks its completion.
 
+For an aligned address A, ``A + 16 <= END`` with an extra carry bit is
+equivalent to ``A[31:4] < END[31:4]``. The port compares these word indices
+directly, avoiding an increment after the clear/scanline address mux. This
+still rejects a partial final word and ``0xfffffff0`` when END is
+``0xffffffff``. The byte-address lower-bound check remains active.
+``make -C tb/verilator test-control`` checks every END low nibble, unaligned
+bases and upper-address boundaries with independent 64-bit byte arithmetic.
+
+The producer holds its request, direction, address, data and mask until ready.
+The port captures the range-check result on the first request edge; only a
+checked, valid request can enter either arbiter on a subsequent edge. This
+adds one validation clock to each depth transaction and separates the address
+mux/comparators from arbitration and other clients' ready paths. An invalid
+request receives no ready pulse or DDR transaction, and raises its registered
+address-error event on the first request edge. Initialization, invalidation
+and cancellation clear the check and error. DDR responses and their error/data payloads cross the registered
+arbiter response stage together, preserving drain and ownership semantics.
+
 Framebuffer and blending
 ------------------------
 
@@ -89,6 +107,21 @@ blending reader calculate the word index as
 the division and remainder select bits. No variable width multiplier is
 needed, and the bit offset depends only on X.
 
+Address generation and range validation use the existing two-step access
+path. ACCEPT captures the address with its full 33-bit carry, payload and
+viewport/alignment checks. MERGE validates a pixel write, and BLEND validates
+a destination read, before any write-buffer merge, flush or DDR request.
+The check includes both memory words for a split pixel, so neither the base
+addition nor a second-word access can wrap silently into the 32-bit address
+space. Invalid accesses raise their error on the edge after acceptance.
+Keep surface configuration stable until the memory path is idle.
+
+Ordinary writes still take one acceptance edge and one merge edge; no new
+preparation state is added. A destination read with dirty buffered writes
+spends one validation cycle in BLEND before entering FLUSH. Cancellation in
+that cycle drops the blend request while preserving previously accepted
+pixel writes for draining.
+
 **Writing pixels.** A pixel transfers when its valid signal and the path's
 ready signal are both asserted. Ready can pause while the path sends a word
 to memory, providing backpressure to the pixel producer. On acceptance, the
@@ -105,6 +138,9 @@ pixel is held until that finishes. A full buffer or an explicit framebuffer
 flush also sends it. The command processor requests that flush at the end
 of DRAW, so successive triangles can share a partially filled word. This
 batching reduces DDR writes while preserving the order of the pixel stream.
+The full flag is registered alongside each dirty-mask merge or clear. It
+blocks new requests in the same cycles as the complete mask check, without
+putting a 128-bit reduction on the pixel pipeline's ready path.
 
 The buffer tracks which bits have changed and turns that information into a
 16-byte write mask. When every changed byte is complete, the word can be
@@ -142,9 +178,14 @@ Read clients share one round-robin arbiter: command fetch, primitive fetch,
 texture loading, depth reads, and framebuffer reads. Depth writes and
 framebuffer writes share a second arbiter. The arbiters select waiting clients
 in rotating order, keep the selected address and write data stable while DDR
-accepts the transaction, then route its completion and error indication back
-to that client. They do not accept a second request until the current response
-has arrived.
+accepts the transaction, then capture completion, data and error together.
+The reserved client receives the registered response in the following cycle.
+Ownership and non-idle status remain active until that response has been
+delivered, so abort/reset barriers cannot pass a buffered completion. A new
+request waits for this final response cycle to finish. This adds one clock
+per transaction without changing external DDR acceptance/completion rules.
+``make -C tb/verilator test-arbiter`` checks reads and writes, round-robin
+ownership, errors, stable requests under backpressure, abort and reset.
 
 An abort stops new requests at the clients and clears fetch-side buffered
 state. Transactions already in flight are allowed to complete. Discarding
@@ -171,3 +212,16 @@ for out-of-range framebuffer accesses, invalid depth requests, or errors
 returned by either DDR path. A framebuffer flush can be used to ensure its
 buffered pixel writes have reached memory before software treats the surface
 as complete.
+
+Verification
+------------
+
+Run ``make -C tb/verilator test-framebuffer`` for directed framebuffer checks.
+The test uses an independent bit-addressed RGB444 reference and randomized
+DDR acceptance/completion delays. It checks 320/640 layouts, normal-write
+cadence, both split offsets, partial-byte read-modify-write, overlapping
+writes, cache hits/invalidation, stalled responses, bounds, 32-bit overflow,
+automatic full-buffer flush/reuse and cancellation during request validation.
+The registered full flag is checked against the dirty mask throughout the run.
+Invalid requests must not start
+DDR traffic, including a blend request arriving while old writes are dirty.

@@ -154,7 +154,12 @@ address, write data and mask remain stable under backpressure.
 The buffer-side ``buffer_ddr_address_o`` and the memory's ``ddr_address_i``
 are instead relative pixel indices, aligned to eight slots for 16-bit
 storage or four slots for 32-bit storage. The controller converts these
-to external byte addresses with a constant shift and addition.
+to external byte addresses with a constant shift and addition. The controller
+registers the initial byte address while selecting a bank for service, before
+asserting its DDR request. Each following word advances that register by
+16 bytes, including a skipped zero-mask eviction beat. The address holds
+through request stalls and response waits, keeping the wide base/offset
+adder outside downstream range-validation and ready logic.
 
 The interface deliberately trades transaction throughput for a small FSM.
 There are bubbles between 128-bit commands and no queue of outstanding
@@ -165,9 +170,12 @@ should guide any later increase in outstanding transactions.
 Pixel protocol and depth comparison
 -----------------------------------
 
-``depth_tester`` holds one pixel register aligned with the synchronous BRAM
-read. It can accept one pixel per cycle inside a span when the consumer is
-ready. It supports these unsigned comparisons:
+``depth_tester`` has two elastic stages: a pixel register aligned with the
+synchronous BRAM read, followed by a registered comparison result. With no
+stalls, a pixel accepted at edge N has its comparison captured at N+1 and
+retires at N+2. Both stages can advance together, maintaining one accepted
+pixel per clock within a span. Registering the decision separates the BRAM
+read and comparison from depth writeback, counters and completion logic. It supports these unsigned comparisons:
 
 .. list-table::
    :header-rows: 1
@@ -195,8 +203,10 @@ Test configuration is captured with each accepted pixel. Disabling the
 test passes enabled pixels and suppresses depth writes. ``write_enable_i``
 can independently suppress updates while retaining the comparison.
 Viewport-disabled pixels are discarded, including when the depth test is
-disabled. A forwarding register resolves consecutive reads and writes to
-the same pixel without relying on a BRAM read-during-write mode.
+disabled. Repeated coordinates use the newest older passing write: the
+pending result takes priority over a captured read/write collision, which
+in turn takes priority over RAM data. This preserves ordered depth tests
+while either stage stalls and avoids dependence on BRAM collision mode.
 
 At the wrapper, input acceptance is ``pixel_valid_i && !stall_o``. Hold the
 pixel and its configuration until acceptance. Pixels outside the active
@@ -207,7 +217,9 @@ of that span; consuming it closes the span, whether it passes or fails.
 discarded pixels. ``pixel_valid_o`` identifies a passing result and
 ``discard_o`` a failing result. Results remain stable under downstream
 ``stall_i``. A result is consumed when ``result_valid_o && !stall_i``;
-only then can a passing depth write commit. Downstream logic must consume
+only then can a passing depth write commit. A final pixel prevents any
+following pixel from entering until that final result commits, so the bank
+cannot change while either stage still owns its old span. Downstream logic must consume
 discarded results as well, otherwise a rejected final pixel cannot release
 the span. This initial stage commits depth immediately and assumes no later
 fragment discard that would require undoing that depth write.
@@ -221,10 +233,13 @@ response cannot be mistaken for a new transaction. Reset during rendering
 does not roll back writes already committed to DDR. Restart only with a
 consistent external depth buffer.
 
-The wrapper does not carry X/Y, color or texture payloads through the
-comparison stage. Hold their corresponding external pipeline register on
-``stall_i`` and load it on input acceptance. The rasterizer and interpolator
-must advance pixels only on this same acceptance. The new-line event is
+The wrapper leaves X/Y, color and texture payload storage to its caller.
+Capture the first payload register on input acceptance, then copy it into a
+second register on ``result_load_o``. This pulse marks advancement from the
+BRAM read stage into the comparison-result stage, even for discarded pixels.
+A result held by ``stall_i`` leaves the second payload register unchanged;
+the first may still capture another accepted pixel. The rasterizer and
+interpolator advance only on input acceptance. The new-line event is
 separate: consume ``new_line_o`` once to initialize interpolation while
 pixel acceptance is disabled.
 
@@ -236,43 +251,14 @@ tests still drive the span producer and pixel consumer directly.
 Verification
 ------------
 
-Run ``make -C tb/re/z_test lint test``. The default parameter matrix is
-16, 17, 24 and 32 depth bits. The memory test checks byte masks, wide and
-scalar access, both bank selections, simultaneous front/back traffic,
-viewport limits and retained data across reset. The wrapper test models DDR
-with independently randomized command readiness and completion latency.
-Its reference depth array is updated from accepted input pixels, independently
-of the RTL's bank states and DDR write data.
-
-Directed cases cover all comparisons, disabled tests/writes, a final-pixel
-write, single-pixel spans, full-width spans, partial bursts, repeated pixel
-addresses, downstream stalls, and successive triangles touching the same
-rows. Random cases vary span widths, positions and both viewport modes. Coverage
-checks require DDR reads and writes to overlap pixel acceptance.
-
-CLEAR_Z service
----------------
-
-``z_tester`` also accepts ``clear_valid_i && clear_ready_o`` with depth,
-base address and ``viewport_size_i``. The mode determines the complete
-surface size and slot layout.
-The caller validates the complete allocation before requesting clear and
-holds the configuration until clear_done_o. Clear and normal scanline jobs
-are exclusive; wait for readiness before starting either one.
-
-``z_clear.sv`` captures a job and writes consecutive 16-byte words with
-mask ``16'hffff``. It uses one address register and one remaining-word
-counter, with no row counters or padding masks. For 16-bit slots the
-word counts are 38400 (VGA) and 9600 (QVGA); 32-bit slots double these
-counts. Data, address and count registers need no reset because job
-acceptance initializes them before any request. Clear ignores depth
-test/write enables. It issues no reads. Its writes use the
-same DDR port and complete only after the final write response. The scanline
-controller is reset while clear is active so old bank state cannot be reused.
-The RE uses 16-bit unsigned Q0.16 depth; the generic unit also supports the
-existing 32-bit slots for Z_WIDTH greater than 16.
-
-The dedicated ``z_clear_tb`` checks both full surfaces for every tested
-Z width, with randomized request stalls and response latency. It verifies
-linear addresses, full masks, zero padding inside depth slots, captured
-job inputs, reset cancellation and completion after the last response.
+Run ``make -C tb/verilator test-depth`` for 16, 17, 24 and 32 depth bits.
+Run ``make -C tb/verilator test-z-address`` to check the registered DDR address
+sequence for 16/32-bit slots, first/last byte masks, skipped zero-mask eviction
+beats, command stability under stalls and completion after write responses.
+The test uses an independent ordered reference array and a synchronous
+read-first memory model. It checks all eight unsigned comparison modes,
+write/test disable, out-of-range reads, repeated coordinates with pending
+and colliding writes, full-rate input, bubbles, output stalls, final-pixel
+barriers, and reset with both stages occupied. The deterministic seed is
+314159. Integration checks additionally exercise scanline fills/writeback,
+variable DDR latency, scene images, depth rejection and framebuffer blending.

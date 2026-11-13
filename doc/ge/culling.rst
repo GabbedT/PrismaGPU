@@ -33,7 +33,12 @@ result.
 Each retained triangle carries this same D value in its output record,
 so downstream rasterization can compute its reciprocal without repeating
 the determinant calculation. The area and vertices stay aligned when the
-pipeline pauses; no extra pipeline stage is needed.
+pipeline pauses. The final area, retained vertices and pass/discard decision
+are registered together before entering the output queue. This adds one
+advancing cycle while retaining one triangle per clock. BUSY includes both
+the product stage and this result stage, even for discarded triangles.
+``make -C tb/verilator test-cull`` checks both windings, all modes, degenerate
+triangles, independent signed-area calculations, stalls and reset.
 
 The stored area is signed, 38 bits wide, and has 16 fractional bits because
 screen x and y each have 8 fractional bits. For the stored integer d,

@@ -16,8 +16,12 @@ padding between fields where needed; register reads zero-extend them.
 
 The interface matches the GE register bank: writes take effect on the rising
 clock edge, with four byte strobes preserving unselected bytes. Read data is
-combinational; ``read_i`` qualifies the access-error output. Writes to RO or
-unlisted addresses report ``write_error_o`` and have no effect. Unlisted reads
+combinational through a case decoder; ``read_i`` qualifies the access-error
+output. Data follows the address even when ``read_i=0`` and should then be
+ignored.
+The shared ``prismaGPU`` wrapper adds a fixed one-clock response by registering
+the inputs of its bank mux and aligning access errors; see :doc:`../integration`.
+Writes to RO or unlisted addresses report ``write_error_o`` and have no effect. Unlisted reads
 return zero with ``read_error_o``. Error outputs are qualified by their requests.
 
 While ``busy_i`` is high, writes to buffer addresses and rendering configuration
@@ -165,6 +169,7 @@ accepted output pixels and completed depth writes, rather than the current
 pipeline's per-triangle completion. CMD_EXHAUSTED can assert before the
 remaining work drains. The integrated controller also waits for framebuffer write responses. All status fields except ERROR and NOTIFY_ID are
 live external inputs; DONE is neither stretched nor latched by the bank.
+The shared bus response captures their values at the read-request edge.
 ERROR is the OR of pending error events, independently of their interrupt masks.
 
 ``re_irq_t`` defines a separate layout shared by IRQ_EN and IRQ_PEND:

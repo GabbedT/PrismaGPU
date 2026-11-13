@@ -29,6 +29,15 @@ All four rows operate in parallel. The transformed vertex is captured by
 the following triangle buffer rather than moving through a sequence of
 four coordinate calculations.
 
+Each row captures its vector and coefficients together before multiplying,
+then registers the products and the two partial sums. Attributes, validity
+and matrix-forward selection follow the same three advancing clocks. This
+adds one clock of latency while preserving one vertex per clock and the
+matrix sampled with each input vertex. All stages hold together on stall;
+BUSY includes the operand stage and reset clears all stage-valid bits.
+``make -C tb/verilator test-matrix`` checks signed full-range arithmetic,
+attribute alignment, changing coefficients, stalls, reset and throughput.
+
 ``GE_MTX_rc`` selects row r and column c, without transposition. The first
 row produces x, the second y, the third z, and the fourth w. An identity
 matrix has ``0x00010000`` on the diagonal and zero elsewhere. A matrix can

@@ -7,6 +7,10 @@ both byte offsets and their word equivalents, where one word is four bytes.
 
 Writes can select individual bytes. Unselected bytes preserve their previous
 values. Register accesses take effect according to the system's bus interface.
+Reads use a combinational case decoder. ``read_i`` qualifies the access error;
+read data follows the address even when ``read_i=0`` and should then be ignored.
+The shared ``prismaGPU`` wrapper registers bank data, selection and errors,
+adding a fixed one-clock bus response; see :doc:`../integration`.
 
 .. list-table:: Registers
    :header-rows: 1
@@ -286,6 +290,10 @@ both does not send newly consumed vertices to the raster engine. See
 GE_STATUS: live status
 ----------------------
 
+Status fields are live inputs to the bank. The shared ``prismaGPU`` bus captures
+their values at the read-request edge along with the other selected registers.
+IRQ edge detection observes the live flags directly.
+
 .. list-table:: GE_STATUS bits, also used by IRQ_EN and IRQ_PEND
    :header-rows: 1
    :widths: 15 25 60
@@ -318,7 +326,9 @@ clipping is reported. The pipeline does not generate 11. STATUS does not
 retain past errors and cannot be cleared by writing it.
 
 BUSY excludes input FIFO words, forwarded matrix results, and triangles
-or words already in the packer. DONE is not latched by the GE and does not
+or words already in the packer. It includes complete triangles in the
+two-entry direct raster queue, even after the geometry pipeline drains.
+DONE is not latched by the GE and does not
 mean that the pipeline or output is empty. STALL is set while the GE is
 enabled and its pipeline input is blocked. This includes output backpressure
 and an input triangle buffer still occupied by clipping. STOP and missing

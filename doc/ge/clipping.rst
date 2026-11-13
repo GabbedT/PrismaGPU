@@ -21,6 +21,11 @@ Classifying the triangle
 The stage tests all three vertices against all six planes. Each vertex
 receives a six-bit classification, with a set bit indicating that it is
 outside the corresponding plane.
+Within polygon clipping, FIFO reads first capture the current and next
+vertices. A separate classification cycle evaluates these registered
+vertices before testing the edge, keeping the FIFO head-selection mux out
+of plane arithmetic and equality checks. This adds one advancing cycle per
+polygon edge; vertex order and boundary inclusion are unchanged.
 
 .. list-table:: Planes and inward distances
    :header-rows: 1
@@ -108,12 +113,24 @@ For a crossing edge A → B, let dA and dB be its endpoints' signed distances
 to the plane. The intersection parameter is
 ``t = |dA| / (|dA| + |dB|)``. Every attribute is interpolated with
 ``A + t × (B − A)``: position, texture coordinates, and all four color channels.
+Color deltas and their start values are registered one cycle before each
+channel's multiplication/writeback, starting alongside the final texture
+coordinate. Color staging adds no cycles and preserves signed product
+truncation and four-bit result. All interpolation registers hold on stall.
+``make -C tb/verilator test-vertex-interpolator`` checks all six planes with
+independent position, texture and RGBA calculations, stalls and reset.
 This gives new vertices suitable for the same downstream processing as the
 original vertices.
 
 The fraction uses 16 fractional bits and can represent both endpoints
 exactly. An iterative divider calculates two fraction bits per cycle,
 so the division itself takes eight advancing cycles for a general crossing.
+The two signed plane distances and their request are captured together before
+the divider computes magnitudes. This adds one advancing cycle per
+intersection and separates plane decoding/addition from divider setup.
+The captured starting sign also controls inward rounding of inexact fractions.
+The request and distances hold together on stall; reset cancels a request
+even between distance capture and divider admission.
 Attributes are then calculated sequentially, sharing arithmetic resources
 rather than duplicating a multiplier for every field. More intersections
 therefore mean more processing time.

@@ -24,39 +24,33 @@ The rendering configuration is shared: ``gouraud_shading_i``, ``texture_i``,
 draw is drained. The top-level integration must retain the active bounding
 box while setup processes another triangle.
 
-Connect the rasterizer's ``pixel_x_o``, ``pixel_y_o``, ``pixel_valid_o`` and
-``new_line_o`` to the corresponding interpolator inputs. The row protocol is:
+A nonempty span pulses ``new_line_i`` with its first integer X/Y coordinate
+and ``pixel_valid_i = 0``. Every nonempty row, including the first row after
+an edge-pair transition, requires this notification; empty rows have none.
+``start_i`` has priority and cancels any pending row initialization.
 
-* In ``X_LOOP_SETUP``, a nonempty span produces ``new_line_o = 1`` and
-  ``pixel_valid_o = 0``. X/Y carry the integer coordinates of its first pixel.
-* The next cycle produces that first pixel with ``pixel_valid_o = 1`` and
-  ``new_line_o = 0``. Subsequent valid pixels advance X by one on the same row.
-* Every nonempty row, including the triangle's first row and the first row
-  after the TM/MB transition, has its own notification. Empty rows have none.
-* Bubbles hold the interpolation accumulators. Coordinates during bubbles
-  without ``new_line_i`` are ignored. A coordinate jump requires a new row
-  notification; ``pixel_valid_i = 0`` alone does not advance X.
+Row initialization uses four sampling edges: capture signed coordinate deltas,
+register the X/Y gradient products, advance the row reference, then add the X
+offset into the pixel accumulator. This keeps coordinate selection, DSP
+multiplication and wide additions on separate clock edges. The first pixel
+can transfer four clocks after the row-notification edge.
 
-The rasterizer computes ``x_start``. During the notification cycle the
-interpolator computes the attribute value at that coordinate. Notification
-and pixel validity must be mutually exclusive. ``start_i`` has priority over
-both; every accepted triangle requires a notification before its first pixel.
+``pixel_ready_o`` is low during reset, start, a row notification and the three
+following preparation cycles. The caller must hold the first pixel's coordinates
+until ready and submit a new row only after the preceding span has finished.
+The integrated span walker gates both its coordinate advance and the depth
+input validity with this readiness; Z, RGB, texture coordinates and screen
+coordinates therefore remain aligned while row initialization is busy.
 
-The fragment outputs are combinational views of the current accumulators,
-with no additional clock of latency. ``pixel_valid_o`` follows the current
-``pixel_valid_i``, gated low during reset, start or a new-row notification.
-The consumer samples the current attributes at the same rising edge that
-advances the accumulators. Any output register belongs outside this module;
-register attributes and the rasterizer's X/Y together there. The interpolator
-has no X/Y outputs.
+The fragment outputs are combinational views of the accumulators.
+``pixel_valid_o = pixel_valid_i && pixel_ready_o``. A transfer exposes the
+current value and advances the enabled accumulators by ``gx`` on the same edge.
+Bubbles and downstream stalls hold the accumulators. There is no extra pixel
+output register, and throughput within a span remains one fragment per clock.
+Output data during invalid cycles is ignored. Reset is synchronous and active
+low; send a new start before resuming pixels.
 
-Throughput is one fragment per clock within a span. There is no ready/stall
-interface: the consumer must accept every valid output. Invalid output data
-is ignored. Internal reset is synchronous and active low; output validity is
-suppressed while reset is asserted. Send a new start before resuming pixels.
-
-For a span beginning at ``(xs, y)``, the inputs and combinational outputs
-before each sampling edge are:
+For a span beginning at ``(xs, y)``:
 
 .. list-table::
    :header-rows: 1
@@ -64,14 +58,23 @@ before each sampling edge are:
 
    * - Clock edge
      - Input before edge
-     - Output before edge
+     - Work at edge / output before edge
    * - N
      - new_line, (xs, y), valid=0
-     - valid=0; accumulators initialize at this edge
+     - Capture coordinate deltas; ready=0
    * - N+1
-     - (xs, y), valid=1
-     - First fragment and its initial attributes
+     - Hold first pixel
+     - Register gradient products; ready=0
    * - N+2
+     - Hold first pixel
+     - Add Y product to row reference; ready=0
+   * - N+3
+     - Hold first pixel
+     - Add X product to pixel accumulator; ready=0
+   * - N+4
+     - (xs, y), valid=1
+     - First fragment; ready=1
+   * - N+5
      - (xs+1, y), valid=1
      - Second fragment, attributes increased by gx
 
@@ -122,9 +125,9 @@ reference; color row, accumulator and output retain 36 bits. Output arrays
 are packed buses: interpret each selected lane with ``$signed``.
 
 Pixel distances are signed integers, with 11 bits for X and 10 bits for Y.
-Products keep the plane's fractional precision. Row/start intermediates
-use 45 bits for F16 planes and 37 bits for F12 planes; increments sign-extend
-the gradients. No rounding or saturation is performed. Inputs must be
+Products keep the plane's fractional precision and fit in the 44/36-bit
+registered datapaths. Each addition retains the low 44/36 bits, preserving
+the original accumulator wrap behavior; increments sign-extend the gradients. No rounding or saturation is performed. Inputs must be
 successful setup planes for the supported viewport, at most 640 by 480.
 The setup's reference and gradient bounds leave sufficient accumulator
 headroom throughout that viewport; arbitrary full-range reference/gradient
@@ -159,18 +162,14 @@ Verification
 
 Run from the repository root::
 
-    make -C tb/re/pixel_interpolator lint test
-    make -C tb/re/pixel_rasterizer lint test
+    make -C tb/verilator test-interpolator
 
-The standalone interpolator test checks every configuration combination,
-sparse validity masks, flat colors, signed extreme gradients, fractional and
-out-of-range references, skipped rows, changing span origins, bubbles, reset,
-viewport extremes and captured descriptor inputs. Its random seed defaults
-to 271828 and can be selected with ``SEED=...``.
+The directed test compares fragment values with independent signed 64-bit
+plane evaluation across all configuration combinations and sparse masks.
+It covers positive/negative coordinate deltas, skipped rows, changing span
+origins, wide signed gradients, accumulator wrap, flat colors, bubbles at the
+first pixel and within a span, and reset during each preparation stage.
+The deterministic random seed is 271828.
 
-The tests sample combinational attributes before the accumulators advance.
-The rasterizer test connects both modules, checks that every nonempty span
-has exactly one notification with the correct origin, and compares every
-interpolated fragment against direct signed 64-bit plane evaluation. Coverage
-includes both edge sides, the TM/MB transition, clipping, empty spans and
-500 deterministic random triangles (seed 314159).
+The integration checks render textured, Gouraud, depth-tested and alpha-blended
+scenes, compare direct and buffered rendering, and replay with slower memory.
