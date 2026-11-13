@@ -60,7 +60,7 @@ FWFLAGS := -march=rv64imafdc_zicsr -mabi=lp64d -mcmodel=medany -std=gnu11 -O2 -g
 .PHONY: build run apps list info test test-interpolator test-depth test-control \
         test-framebuffer test-raster-buffer test-triangle-buffer test-z-address test-span-address \
         test-math test-registers test-vertex-interpolator test-matrix test-cull test-arbiter test-rasterizer \
-        test-clip-engine test-color-transit test-z-buffer-line \
+        test-clip-engine test-color-transit test-z-buffer-line test-ge-control-write test-setup \
         lint video bench clean config
 build: $(BUILD)/obj/Vprisma_tb_top $(FIRMWARE)
 apps: $(addprefix $(BUILD)/app/,$(addsuffix .elf,$(APPS)))
@@ -94,6 +94,22 @@ lint:
 
 test: build apps
 	python3 script/check.py
+
+test-ge-control-write:
+	$(VERILATOR) --binary --timing --assert -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Wno-TIMESCALEMOD \
+	    -Wno-CASEINCOMPLETE -j $(JOBS) --top-module ge_control_write_tb --Mdir $(BUILD)/ge_control_write \
+	    -F $(ROOT)/hw/geometry_engine/_geometry_engine.f sv/ge_control_write_tb.sv
+	$(BUILD)/ge_control_write/Vge_control_write_tb
+
+test-setup:
+	@for multiplier_latency in 0 3; do \
+	    $(VERILATOR) --binary --timing --assert -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Wno-TIMESCALEMOD \
+	        -Wno-CASEINCOMPLETE -j $(JOBS) --top-module triangle_setup_tb \
+	        -GMULTIPLIER_LATENCY=$$multiplier_latency $$(test $$multiplier_latency = 0 || echo -D_VIVADO_) \
+	        --Mdir $(BUILD)/triangle_setup_$$multiplier_latency \
+	        -F $(ROOT)/hw/raster_engine/_raster_engine.f sv/triangle_setup_tb.sv && \
+	    $(BUILD)/triangle_setup_$$multiplier_latency/Vtriangle_setup_tb || exit $$?; \
+	done
 
 test-interpolator:
 	$(VERILATOR) --binary --timing --assert -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Wno-TIMESCALEMOD \

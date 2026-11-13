@@ -732,7 +732,19 @@ module triangle_setup #(
                 math_command_NXT = CALC_SLOPE;
             end
 
-            EDGE_CHECK: state_NXT = edge_CRT[edge_idx_CRT].valid ? MATH_PREP : NEXT_EDGE;
+            EDGE_CHECK: begin
+                if (!edge_CRT[edge_idx_CRT].valid) begin
+                    state_NXT = NEXT_EDGE;
+                end else if (edge_CRT[edge_idx_CRT].xa == edge_CRT[edge_idx_CRT].xb) begin
+                    state_NXT = NEXT_EDGE;
+
+                    /* A valid vertical edge has zero slope at every sample Y */
+                    edge_NXT[edge_idx_CRT].sx = '0;
+                    edge_NXT[edge_idx_CRT].x_initial = 24'($signed(edge_CRT[edge_idx_CRT].xa)) <<< 4;
+                end else begin
+                    state_NXT = MATH_PREP;
+                end
+            end
 
             NEXT_EDGE: begin
                 if (edge_idx_CRT == EDGE_MB) begin

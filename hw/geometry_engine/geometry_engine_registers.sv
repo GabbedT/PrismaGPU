@@ -46,6 +46,8 @@ module geometry_engine_registers (
 
     /* Write interface; addresses are word offsets (byte address [7:2]). */
     input logic write_i,
+    /* Reject the whole GE_CTRL update; other addresses remain independent. */
+    input logic control_write_blocked_i,
     input logic [5:0] write_address_i,
     input logic [3:0][7:0] write_data_i,
     input logic [3:0] write_strobe_i,
@@ -114,7 +116,7 @@ module geometry_engine_registers (
                 control_register.stop_processing <= 1'b0;
                 control_register.soft_reset <= 1'b0;
 
-                if (write_register & (write_address == GE_CTRL)) begin
+                if (write_register & (write_address == GE_CTRL) & !control_write_blocked_i) begin
                     if (write_strobe_i[0]) begin
                         control_register.enable           <= write_data_i[0][0];
                         control_register.start_processing <= write_data_i[0][1];

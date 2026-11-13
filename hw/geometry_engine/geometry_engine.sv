@@ -121,7 +121,7 @@ module geometry_engine #(
         .enable_o           ( enable           ),
         .start_processing_o ( start_processing ),
         .stop_processing_o  ( stop_processing  ),
-        
+
         .front_face_o ( front_face ),
         .cull_mode_o  ( cull_mode  ),
 
@@ -146,13 +146,15 @@ module geometry_engine #(
         .busy_i  ( busy | raster_buffer_valid ),
         .done_i  ( done_i ),
         .error_i ( error  ),
-        
+
         .input_triangle_count_i     ( input_triangle_count     ),
         .output_triangle_count_i    ( output_triangle_count    ),
         .discarded_triangle_count_i ( discarded_triangle_count ),
         .stall_cycle_count_i        ( stall_cycle_count        ),
 
-        .write_i         ( register_write_i & !mode_write_blocked ),
+        .control_write_blocked_i ( mode_write_blocked ),
+
+        .write_i         ( register_write_i         ),
         .write_address_i ( register_write_address_i ),
         .write_data_i    ( register_write_data_i    ),
         .write_strobe_i  ( register_write_strobe_i  ),
