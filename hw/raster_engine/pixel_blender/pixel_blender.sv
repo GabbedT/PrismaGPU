@@ -1,7 +1,10 @@
 `ifndef PIXEL_BLENDER_SV
     `define PIXEL_BLENDER_SV
 
-module pixel_blender (
+module pixel_blender #(
+    parameter bit CLAMPED_COLOR = 1'b0,
+    localparam int COLOR_WIDTH = CLAMPED_COLOR ? 16 : 36
+) (
     input logic clk_i,
     input logic rst_n_i,
 
@@ -13,8 +16,9 @@ module pixel_blender (
     input logic [9:0] pixel_x_i,
     input logic [8:0] pixel_y_i,
 
-    /* Signed S(36,12), channel scale 0..15, lanes 0=R, 1=G, 2=B. */
-    input logic [2:0][35:0] color_i,
+    /* Default: signed S(36,12). CLAMPED_COLOR: unsigned F12 in [0,61440].
+     * Lanes 0=R, 1=G, 2=B; clamped input retains every fractional bit. */
+    input logic [2:0][COLOR_WIDTH - 1:0] color_i,
     input logic [15:0] texel_i,
     input logic texture_valid_i,
 
@@ -38,12 +42,6 @@ module pixel_blender (
     logic [2:0][19:0] weighted_sum;
 
     assign stall_o = stall_i;
-
-    function automatic logic [15:0] clamp_color(input logic signed [35:0] value);
-        if (value <= 0) return 16'd0;
-        if (value >= 36'sd61440) return 16'd61440;
-        return value[15:0];
-    endfunction
 
     /* Convert numerator / (15 * 4096) to RGB4, nearest with ties to even */
     function automatic logic [3:0] quantize_color(input logic [19:0] numerator);
@@ -87,10 +85,15 @@ module pixel_blender (
                 y_pipe[stage] <= y_pipe[stage - 1];
             end
 
-            /* Stage 1: clamp the base color, retaining all F12 precision.
+            /* Stage 1: capture the base color, saturating the default wide
+             * input. The integrated path already saturated before Z/transit.
              * An invalid texel becomes transparent; ignore all its bits. */
             for (int channel = 0; channel < 3; channel++) begin
-                color_clamped[channel] <= clamp_color($signed(color_i[channel]));
+                if (CLAMPED_COLOR) begin
+                    color_clamped[channel] <= color_i[channel];
+                end else begin
+                    color_clamped[channel] <= clamp_fragment_color($signed(color_i[channel]));
+                end
                 texture_rgb[channel] <= texture_valid_i ? texel_i[12 - 4*channel +: 4] : 4'd0;
             end
             

@@ -18,6 +18,15 @@ are R, G and B, each interpreted as signed 36-bit F12 in the channel scale
 0..15. The texel carries R at bits 15:12, G at 11:8, B at 7:4 and alpha
 at 3:0.
 
+That signed 36-bit interface is the default ``CLAMPED_COLOR=0`` mode.
+``CLAMPED_COLOR=1`` accepts three unsigned 16-bit F12 channels already
+saturated to raw range 0..61440. The integrated raster pipeline performs
+this saturation once after interpolation, before the depth and texture
+payload delays, and selects the narrow mode in both texturizer and blender.
+The blender's first stage then captures the clamped input directly. All
+twelve fractional bits, output rounding, latency and stall behavior are
+identical in the two modes; the wide interpolation accumulators are unchanged.
+
 ``pixel_o`` has type ``pixel_blender_pkg::pixel_t``:
 
 .. code-block:: systemverilog
@@ -88,7 +97,7 @@ Pipeline, stall and reset
    * - Stage
      - Operation
    * - 1
-     - Clamp signed F12 base color and capture texel RGB and alpha weights
+     - Capture base color (clamp in default wide mode), texel RGB and alpha weights
    * - 2
      - Register unsigned 16x4 base and 4x4 texture products per channel
    * - 3
@@ -122,22 +131,18 @@ Run from the repository root:
 
 .. code-block:: console
 
-   make -C tb/re/pixel_blender lint test
+   make -C tb/verilator test-color-transit
 
-``pixel_blender_tb`` compares results against independent signed 64-bit
-arithmetic with ordinary division and remainder. It checks every in-range
-F12 base value on bypass, all integer base/texture/alpha combinations,
-fractional values around output rounding boundaries, signed extremes,
-channel packing, bubbles, stalls and reset at each pipeline occupancy.
-
-``texturizer_blender_tb`` loads texture RAM and connects the two actual
-stages. It checks every texel at each supported size, per-pixel
-configuration changes, disabled texturing, nonpositive perspective
-denominators, edge clamping, randomized stalls and reset in flight.
-Texture coordinates in this integration test use texel centers or clamp
-edges so the expected addresses are independent of reciprocal LUT
-implementation details. The default random seed is 161803; override it
-with ``SEED=...``.
+``color_transit_tb`` connects both the default wide texturizer/blender chain
+and the narrow chain used by the GPU. It compares both against independent
+signed 64-bit arithmetic with ordinary division and remainder, checking
+every 16-bit raw F12 base value on bypass, fractional rounding boundaries,
+signed extremes, saturation boundaries and RGB packing. Texture RAM is
+loaded with varying RGB and alpha, with sampling at texel centers for every
+supported texture size. Per-pixel configuration changes, disabled texturing,
+nonpositive perspective denominators, bubbles, randomized stalls and reset
+at every pipeline occupancy check payload alignment and the unchanged
+fourteen-edge latency. The test uses random seed 161803.
 
 Framebuffer destination blending
 --------------------------------

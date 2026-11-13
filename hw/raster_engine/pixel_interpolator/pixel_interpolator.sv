@@ -50,8 +50,9 @@ module pixel_interpolator (
 //====================================================================================
 
     /* A row notification captures its coordinate deltas. The following three
-     * edges register products, advance the row reference, then initialize X.
-     * No coordinate selection, multiplier and accumulator adder share an edge.
+     * edges register Y products, advance the row reference while registering X
+     * products, then initialize X. Each lane reuses one multiplier and product
+     * register; no multiplier feeds an accumulator adder in the same cycle.
      * Within a span, accepted pixels still advance by gx once per clock. */
     typedef enum logic [1:0] { READY, MULTIPLY, ADD_ROW, ADD_SPAN } state_t;
     state_t state_CRT;
@@ -66,11 +67,13 @@ module pixel_interpolator (
     /* Signed F16 attributes and F12 colors retain their original accumulator
      * widths. Products fit these widths (32x11 and 24x11 at most); additions
      * wrap at 44/36 bits exactly as before, with no rounding or saturation.
-     * X products hold until ADD_SPAN; Y products are consumed by ADD_ROW. */
+     * ADD_ROW consumes the registered Y product while replacing it with X;
+     * ADD_SPAN consumes that X product and the updated row reference. */
     logic [3:0][43:0] attr_row_CRT, attr_acc_CRT;
     logic [2:0][35:0] color_row_CRT, color_acc_CRT;
-    logic signed [43:0] attr_x_product [4], attr_y_product [4];
-    logic signed [35:0] color_x_product [3], color_y_product [3];
+    logic signed [43:0] attr_product [4];
+    logic signed [35:0] color_product [3];
+    logic signed [10:0] multiply_delta;
     logic [6:0] attr_mask;
     logic [3:0] attr_enable;
     logic [2:0] color_enable;
@@ -80,6 +83,9 @@ module pixel_interpolator (
     assign attr_enable = {attr_mask[ATTR_INV_W:ATTR_TEX_U], attr_mask[ATTR_Z]};
     assign color_enable = attr_mask[ATTR_B:ATTR_R];
     assign flat_color = {flat_b_i, flat_g_i, flat_r_i};
+
+    /* Sign-extend the ten-bit Y delta to the shared signed multiplier input. */
+    assign multiply_delta = (state_CRT == MULTIPLY) ? $signed(delta_y_CRT) : delta_x_CRT;
 
     always_ff @(posedge clk_i) begin
         if (!rst_n_i) begin
@@ -103,6 +109,17 @@ module pixel_interpolator (
                 color_acc_CRT[i] <= gouraud_shading_i ? 36'b0 : {20'b0, flat_color[i], 12'b0};
             end
         end else begin
+            /* One multiplication expression per lane makes X/Y sharing explicit.
+             * Reset or start cancels preparation before any product can be used. */
+            if ((state_CRT == MULTIPLY) || (state_CRT == ADD_ROW)) begin
+                for (int i = 0; i < 4; i++) begin
+                    attr_product[i] <= $signed((state_CRT == MULTIPLY) ? attr_CRT[i].gy : attr_CRT[i].gx) * multiply_delta;
+                end
+                for (int i = 0; i < 3; i++) begin
+                    color_product[i] <= $signed((state_CRT == MULTIPLY) ? color_CRT[i].gy : color_CRT[i].gx) * multiply_delta;
+                end
+            end
+
             case (state_CRT)
                 READY: begin
                     if (new_line_i) begin
@@ -129,29 +146,19 @@ module pixel_interpolator (
                 end
 
                 MULTIPLY: begin
-                    for (int i = 0; i < 4; i++) begin
-                        attr_x_product[i] <= $signed(attr_CRT[i].gx) * delta_x_CRT;
-                        attr_y_product[i] <= $signed(attr_CRT[i].gy) * delta_y_CRT;
-                    end
-
-                    for (int i = 0; i < 3; i++) begin
-                        color_x_product[i] <= $signed(color_CRT[i].gx) * delta_x_CRT;
-                        color_y_product[i] <= $signed(color_CRT[i].gy) * delta_y_CRT;
-                    end
-
                     state_CRT <= ADD_ROW;
                 end
 
                 ADD_ROW: begin
                     for (int i = 0; i < 4; i++) begin
                         if (attr_enable[i]) begin
-                            attr_row_CRT[i] <= $signed(attr_row_CRT[i]) + attr_y_product[i];
+                            attr_row_CRT[i] <= $signed(attr_row_CRT[i]) + attr_product[i];
                         end
                     end
 
                     for (int i = 0; i < 3; i++) begin
                         if (color_enable[i]) begin
-                            color_row_CRT[i] <= $signed(color_row_CRT[i]) + color_y_product[i];
+                            color_row_CRT[i] <= $signed(color_row_CRT[i]) + color_product[i];
                         end
                     end
 
@@ -161,13 +168,13 @@ module pixel_interpolator (
                 ADD_SPAN: begin
                     for (int i = 0; i < 4; i++) begin
                         if (attr_enable[i]) begin
-                            attr_acc_CRT[i] <= $signed(attr_row_CRT[i]) + attr_x_product[i];
+                            attr_acc_CRT[i] <= $signed(attr_row_CRT[i]) + attr_product[i];
                         end
                     end
 
                     for (int i = 0; i < 3; i++) begin
                         if (color_enable[i]) begin
-                            color_acc_CRT[i] <= $signed(color_row_CRT[i]) + color_x_product[i];
+                            color_acc_CRT[i] <= $signed(color_row_CRT[i]) + color_product[i];
                         end
                     end
 

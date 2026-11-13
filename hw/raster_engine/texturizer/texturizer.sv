@@ -1,7 +1,10 @@
 `ifndef TEXTURIZER_SV
     `define TEXTURIZER_SV
 
-module texturizer (
+module texturizer #(
+    parameter bit CLAMPED_COLOR = 1'b0,
+    localparam int COLOR_WIDTH = CLAMPED_COLOR ? 16 : 36
+) (
     input logic clk_i,
     input logic rst_n_i,
 
@@ -18,8 +21,9 @@ module texturizer (
     input logic [9:0] pixel_x_i,
     input logic [8:0] pixel_y_i,
 
-    /* Preserve interpolator RGB lanes verbatim: signed S(36,12). */
-    input logic [2:0][35:0] color_i,
+    /* Default: signed S(36,12). CLAMPED_COLOR: unsigned F12 in [0,61440].
+     * The caller saturates after interpolation; this module preserves bits. */
+    input logic [2:0][COLOR_WIDTH - 1:0] color_i,
 
     /* Interpolated perspective attributes: signed S(44,16). */
     input logic signed [43:0] u_over_w_i,
@@ -35,7 +39,7 @@ module texturizer (
     output logic pixel_valid_o,
     output logic [9:0] pixel_x_o,
     output logic [8:0] pixel_y_o,
-    output logic [2:0][35:0] color_o,
+    output logic [2:0][COLOR_WIDTH - 1:0] color_o,
 
     /* R[15:12], G[11:8], B[7:4], A[3:0]; meaningful with texture_valid_o. */
     output logic [15:0] texel_o,
@@ -47,7 +51,7 @@ module texturizer (
     logic [TEXTURIZER_LATENCY - 1:0] pixel_valid_pipe;
     logic [9:0] pixel_x_pipe [TEXTURIZER_LATENCY];
     logic [8:0] pixel_y_pipe [TEXTURIZER_LATENCY];
-    logic [2:0][35:0] color_pipe [TEXTURIZER_LATENCY];
+    logic [2:0][COLOR_WIDTH - 1:0] color_pipe [TEXTURIZER_LATENCY];
     texture_size_t size_pipe [TEXTURE_COORDINATE_LATENCY];
     logic [5:0] texel_u, texel_v;
     logic read_en;

@@ -71,6 +71,14 @@ module triangle_math_unit #(
 
     localparam int EDGE_ALIGN = 12;
     localparam int ATTR_ALIGN = 8;
+    /* Only final reciprocal products need the 88-bit conversion path.
+     * Temporary attribute differences fit 33 bits and coordinate differences
+     * fit 19 bits after coordinate validation. Their products and the
+     * difference of two products fit 53 signed bits by width alone. Edge
+     * and reference sums fit the same bound; packed reciprocals use 41 bits.
+     * Keep one spare bit and a separate carry/sign guard in the shared adder.
+     * These widths preserve every fractional bit and all execution cycles. */
+    localparam int TEMP_WIDTH = 54;
 
     localparam logic signed [8:0] FINAL_SHIFT = 9'sd8;
     localparam logic signed [8:0] GRAD_RECIP_SHIFT = 9'sd38;
@@ -151,7 +159,8 @@ module triangle_math_unit #(
 //      FETCH UNIT
 //====================================================================================
 
-    logic signed [87:0] t0, t1, t2, out_data;
+    logic signed [TEMP_WIDTH-1:0] t0, t1, t2;
+    logic signed [87:0] out_data;
     command_t command_reg;
     logic [2:0] micro_pc;
     state_t state_CRT, state_NXT;
@@ -242,9 +251,9 @@ module triangle_math_unit #(
 //====================================================================================
 
     operand_sel_t add_a_sel, add_b_sel;
-    logic signed [87:0] add_a, add_b;
-    logic signed [87:0] add_a_next, add_b_next;
-    logic signed [88:0] add_result;
+    logic signed [TEMP_WIDTH-1:0] add_a, add_b;
+    logic signed [TEMP_WIDTH-1:0] add_a_next, add_b_next;
+    logic signed [TEMP_WIDTH:0] add_result;
     logic subtract, subtract_next;
 
     assign add_a_sel = instruction.src_a;
@@ -294,8 +303,7 @@ module triangle_math_unit #(
             endcase
         end
 
-    /* Reuse VALIDATE to separate source selection from the guarded adder.
-     * Retain all 88 signed bits and the existing 89-bit overflow check. */
+    /* Reuse VALIDATE to separate source selection from the guarded adder. */
     always_ff @(posedge clk_i) begin
         if (state_CRT == VALIDATE) begin
             add_a <= add_a_next;
@@ -305,7 +313,8 @@ module triangle_math_unit #(
     end
 
     /* One shared carry chain for signed addition and subtraction, with a guard bit */
-    assign add_result = {add_a[87], add_a} + ({add_b[87], add_b} ^ {89{subtract}}) + subtract;
+    assign add_result = {add_a[TEMP_WIDTH-1], add_a} +
+                        ({add_b[TEMP_WIDTH-1], add_b} ^ {(TEMP_WIDTH+1){subtract}}) + subtract;
 
 
 //====================================================================================
@@ -482,9 +491,9 @@ module triangle_math_unit #(
 
             case (instruction.op)
                 ADD, SUB: begin
-                    raw_result_next = add_result[87:0];
+                    raw_result_next = 88'($signed(add_result));
 
-                    if (add_result[88] != add_result[87]) begin
+                    if (add_result[TEMP_WIDTH] != add_result[TEMP_WIDTH-1]) begin
                         raw_status_next = STATUS_OVERFLOW;
                     end
                 end
@@ -788,11 +797,11 @@ module triangle_math_unit #(
                         end else begin
                             /* Register write */
                             case (instruction.dst)
-                                DST_T0: t0 <= write_data;
+                                DST_T0: t0 <= write_data[TEMP_WIDTH-1:0];
 
-                                DST_T1: t1 <= write_data;
+                                DST_T1: t1 <= write_data[TEMP_WIDTH-1:0];
 
-                                DST_T2: t2 <= write_data;
+                                DST_T2: t2 <= write_data[TEMP_WIDTH-1:0];
 
                                 DST_OUT: out_data <= write_data;
                             endcase
@@ -806,6 +815,17 @@ module triangle_math_unit #(
                 endcase
             end
         end
+
+    /* Guard the temporary-width proof if a microprogram is extended later. */
+    // synthesis translate_off
+    always_ff @(posedge clk_i) begin
+        if (rst_n_i && state_CRT == WRITEBACK && write_status == STATUS_OK &&
+            instruction.dst != DST_OUT) begin
+            assert (fits(write_data, TEMP_WIDTH))
+                else $fatal(1, "Microprogram temporary exceeds its exact signed width");
+        end
+    end
+    // synthesis translate_on
 
 endmodule : triangle_math_unit
 

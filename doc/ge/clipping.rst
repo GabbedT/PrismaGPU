@@ -26,6 +26,11 @@ vertices. A separate classification cycle evaluates these registered
 vertices before testing the edge, keeping the FIFO head-selection mux out
 of plane arithmetic and equality checks. This adds one advancing cycle per
 polygon edge; vertex order and boundary inclusion are unchanged.
+Only the current plane is evaluated during this iterative walk. Each endpoint
+selects its coordinate before a shared 33-bit signed add/subtract; the resulting
+distance supplies inside/on-plane classification and the intersection divider.
+The sign-extension precedes arithmetic, including at the signed-32 limits.
+The initial three-vertex trivial accept/reject test still evaluates all planes.
 
 .. list-table:: Planes and inward distances
    :header-rows: 1
@@ -105,6 +110,10 @@ An internal polygon buffer holds up to nine vertices, the geometric maximum
 for a triangle clipped by six half-planes. It is reused as the stage walks
 the planes, and its final contents are passed to the triangle assembler.
 The input triangle stays available until the complete operation finishes.
+The clipper loads its initial polygon directly from this held upstream triangle,
+including after a stall in initialization. It does not retain a second copy of
+the 624-bit input payload. The upstream hold contract extends through assembly
+and completion, as before.
 
 Intersections and attributes
 ----------------------------
@@ -119,6 +128,9 @@ coordinate. Color staging adds no cycles and preserves signed product
 truncation and four-bit result. All interpolation registers hold on stall.
 ``make -C tb/verilator test-vertex-interpolator`` checks all six planes with
 independent position, texture and RGBA calculations, stalls and reset.
+``make -C tb/verilator test-clip-engine`` additionally compares complete clipped
+polygons and triangle fans against an independent integer reference, including
+plane endpoints, multiple planes, input ownership, stalls and reset.
 This gives new vertices suitable for the same downstream processing as the
 original vertices.
 

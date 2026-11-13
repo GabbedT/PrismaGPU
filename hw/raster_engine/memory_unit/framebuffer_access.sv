@@ -68,8 +68,14 @@ module framebuffer_access (
     logic [31:0] buffer_address;
     logic [8:0] buffer_y;
 
-    /* One beat plus the part of a pixel crossing its boundary. */
-    logic [139:0] pending_data, pending_mask;
+    /* Retain a compact pixel descriptor until MERGE. A fresh pixel has three
+     * nibbles; a spill retains one/two high nibbles at offset zero. Expanding
+     * only when merging avoids registering two mostly-empty 140-bit words. */
+    logic [11:0] pending_pixel, pending_nibble_mask;
+    logic [4:0] pending_offset;
+    logic [1:0] pending_nibbles;
+    logic pending_spill;
+    logic [127:0] pending_data, pending_mask;
     logic [32:0] pending_address;
     logic [8:0] pending_y;
     logic pending_coordinates_valid, blend_coordinates_valid_CRT;
@@ -90,7 +96,7 @@ module framebuffer_access (
     logic [8:0] viewport_height;
     logic [11:0] pixel_tripled_x, blend_tripled_x;
     logic [14:0] pixel_row, blend_row, pixel_word, blend_word;
-    logic [6:0] pixel_offset, blend_pixel_offset;
+    logic [6:0] blend_pixel_offset;
     logic [32:0] pixel_address, blend_address_ext;
     logic [32:0] pending_access_end, blend_access_end;
     logic surface_valid, pixel_in_range, blend_in_range;
@@ -115,7 +121,6 @@ module framebuffer_access (
         blend_tripled_x = (blend_x_i << 1) + blend_x_i;
         pixel_word = pixel_row + pixel_tripled_x[11:5];
         blend_word = blend_row + blend_tripled_x[11:5];
-        pixel_offset = {pixel_tripled_x[4:0], 2'b0};
         blend_pixel_offset = {blend_tripled_x[4:0], 2'b0};
         pixel_address = {1'b0, base_i} + {14'b0, pixel_word, 4'b0};
         blend_address_ext = {1'b0, base_i} + {14'b0, blend_word, 4'b0};
@@ -129,10 +134,25 @@ module framebuffer_access (
      * write-buffer merge, flush or DDR request. Keep configuration stable until
      * idle. This splits address generation from bounds comparison without
      * adding a cycle to ordinary pixel writes or clean-cache blend reads. */
-    assign pending_access_end = pending_address + ((pending_mask[139:128] != 0) ? 33'd32 : 33'd16);
+    /* Only a fresh three-nibble pixel can have offset 30 or 31. Spill
+     * fragments always have offset zero, so their validation covers one beat. */
+    assign pending_spill = pending_offset >= 5'd30;
+    assign pending_access_end = pending_address + (pending_spill ? 33'd32 : 33'd16);
     assign blend_access_end = blend_address + ((!blend_second && blend_offset > 116) ? 33'd32 : 33'd16);
     assign pixel_in_range = pending_coordinates_valid && (pending_access_end <= {1'b0, end_i});
     assign blend_in_range = blend_coordinates_valid_CRT && (blend_access_end <= {1'b0, end_i});
+
+    always_comb begin
+        case (pending_nibbles)
+            2'd1: pending_nibble_mask = 12'h00f;
+            2'd2: pending_nibble_mask = 12'h0ff;
+            2'd3: pending_nibble_mask = 12'hfff;
+            default: pending_nibble_mask = '0;
+        endcase
+    end
+
+    assign pending_data = {116'b0, pending_pixel} << {pending_offset, 2'b0};
+    assign pending_mask = {116'b0, pending_nibble_mask} << {pending_offset, 2'b0};
 
 //====================================================================================
 //      HANDSHAKES AND BYTE ENABLES
@@ -175,8 +195,9 @@ module framebuffer_access (
             buffer_full <= 1'b0;
             buffer_address <= '0;
             buffer_y <= '0;
-            pending_data <= '0;
-            pending_mask <= '0;
+            pending_pixel <= '0;
+            pending_offset <= '0;
+            pending_nibbles <= '0;
             pending_address <= '0;
             pending_y <= '0;
             pending_coordinates_valid <= 1'b0;
@@ -218,8 +239,9 @@ module framebuffer_access (
                         pending_address <= pixel_address;
                         pending_coordinates_valid <= pixel_coordinates_valid;
                         pending_y <= pixel_y_i;
-                        pending_data <= pixel_i << pixel_offset;
-                        pending_mask <= 140'hfff << pixel_offset;
+                        pending_pixel <= pixel_i;
+                        pending_offset <= pixel_tripled_x[4:0];
+                        pending_nibbles <= 2'd3;
                         state <= MERGE;
                     end
                 end
@@ -233,23 +255,29 @@ module framebuffer_access (
                         state <= FLUSH;
                     end else begin
                         if (dirty_bits == 0) begin
-                            write_buffer <= pending_data[127:0];
+                            write_buffer <= pending_data;
                         end else begin
-                            write_buffer <= (write_buffer & ~pending_mask[127:0]) | pending_data[127:0];
+                            write_buffer <= (write_buffer & ~pending_mask) | pending_data;
                         end
 
-                        dirty_bits <= dirty_bits | pending_mask[127:0];
-                        buffer_full <= &(dirty_bits | pending_mask[127:0]);
+                        dirty_bits <= dirty_bits | pending_mask;
+                        buffer_full <= &(dirty_bits | pending_mask);
                         buffer_address <= pending_address[31:0];
                         buffer_y <= pending_y;
                         if (cache_valid && cache_tag == pending_address[31:0]) begin
                             cache_valid <= 1'b0;
                         end
 
-                        if (pending_mask[139:128] != 0) begin
+                        if (pending_spill) begin
                             pending_address <= pending_address + 33'd16;
-                            pending_mask <= {128'b0, pending_mask[139:128]};
-                            pending_data <= {128'b0, pending_data[139:128]};
+                            pending_offset <= '0;
+                            if (pending_offset == 5'd30) begin
+                                pending_pixel <= {8'b0, pending_pixel[11:8]};
+                                pending_nibbles <= 2'd1;
+                            end else begin
+                                pending_pixel <= {4'b0, pending_pixel[11:4]};
+                                pending_nibbles <= 2'd2;
+                            end
                         end else begin
                             state <= ACCEPT;
                         end

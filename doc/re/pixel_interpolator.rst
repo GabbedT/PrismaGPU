@@ -30,10 +30,12 @@ an edge-pair transition, requires this notification; empty rows have none.
 ``start_i`` has priority and cancels any pending row initialization.
 
 Row initialization uses four sampling edges: capture signed coordinate deltas,
-register the X/Y gradient products, advance the row reference, then add the X
-offset into the pixel accumulator. This keeps coordinate selection, DSP
-multiplication and wide additions on separate clock edges. The first pixel
-can transfer four clocks after the row-notification edge.
+register the Y gradient products, advance the row reference while registering
+the X gradient products, then add the X offset into the pixel accumulator.
+Each of the seven lanes shares one multiplier and product register between X
+and Y. A multiplication never feeds the wide accumulator addition in the same
+cycle. The first pixel can transfer four clocks after the row-notification
+edge, preserving the preparation latency and fragment throughput.
 
 ``pixel_ready_o`` is low during reset, start, a row notification and the three
 following preparation cycles. The caller must hold the first pixel's coordinates
@@ -64,10 +66,10 @@ For a span beginning at ``(xs, y)``:
      - Capture coordinate deltas; ready=0
    * - N+1
      - Hold first pixel
-     - Register gradient products; ready=0
+     - Register Y gradient products; ready=0
    * - N+2
      - Hold first pixel
-     - Add Y product to row reference; ready=0
+     - Add Y product to row reference and register X product; ready=0
    * - N+3
      - Hold first pixel
      - Add X product to pixel accumulator; ready=0
@@ -125,7 +127,8 @@ reference; color row, accumulator and output retain 36 bits. Output arrays
 are packed buses: interpret each selected lane with ``$signed``.
 
 Pixel distances are signed integers, with 11 bits for X and 10 bits for Y.
-Products keep the plane's fractional precision and fit in the 44/36-bit
+The shared multiplier sign-extends Y to 11 bits. Products keep the plane's
+fractional precision and fit in the 44/36-bit
 registered datapaths. Each addition retains the low 44/36 bits, preserving
 the original accumulator wrap behavior; increments sign-extend the gradients. No rounding or saturation is performed. Inputs must be
 successful setup planes for the supported viewport, at most 640 by 480.
@@ -169,6 +172,9 @@ plane evaluation across all configuration combinations and sparse masks.
 It covers positive/negative coordinate deltas, skipped rows, changing span
 origins, wide signed gradients, accumulator wrap, flat colors, bubbles at the
 first pixel and within a span, and reset during each preparation stage.
+Directed replacement triangles cancel each preparation stage and exercise
+extreme signed gradients with negative X and positive/negative Y deltas,
+checking that the shared product register cannot leak an older triangle.
 The deterministic random seed is 271828.
 
 The integration checks render textured, Gouraud, depth-tested and alpha-blended

@@ -14,6 +14,17 @@ Fragment interface
 ``pixel_valid_i`` marks an input fragment. ``pixel_x_i`` is 10 bits and
 ``pixel_y_i`` is 9 bits. ``color_i`` has three 36-bit lanes, ordered R, G, B
 from lane zero, preserving the interpolator's signed F12 values verbatim.
+This is the default ``CLAMPED_COLOR=0`` interface. With
+``CLAMPED_COLOR=1``, each RGB input/output lane and every RGB delay register
+is instead 16-bit unsigned F12. The caller must already have saturated each
+evaluated color to raw range 0..61440; all twelve fractional bits remain.
+The integrated raster pipeline selects this mode and saturates immediately
+after interpolation, before the two depth-payload registers. Its color
+accumulators still use signed 36-bit F12, so clipping the fragment payload
+does not change interpolation or subsequent samples. Narrowing saves 600
+declared RGB storage bits in the ten-stage texturizer and another 120 in
+the depth payload, without changing latency or the stall protocol.
+
 ``u_over_w_i``, ``v_over_w_i`` and ``inv_w_i`` are signed 44-bit F16 values,
 corresponding to interpolator ``attr_o[1]``, ``attr_o[2]`` and ``attr_o[3]``.
 The caller supplies valid perspective attributes for textured pixels.

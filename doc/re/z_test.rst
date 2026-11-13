@@ -50,10 +50,23 @@ layout, with the lowest X in the least significant slot:
 
 Pixel writes zero the unused high slot bits. DDR transfers preserve all
 enabled bytes, including padding. This avoids depths straddling a DDR word
-and avoids division by a runtime sample size. Independent RAM lanes provide
-the wide port without a wide read-modify-write operation for each pixel.
-The RTL uses synchronous reads, byte write enables and ``ram_style="block"``.
-Actual BRAM packing and timing must be checked in synthesis.
+and avoids division by a runtime sample size. Each bank is a 128-bit-wide
+simple dual-port RAM with one read port and one independent byte-write port.
+A pixel read selects its slot from the registered word; a pixel write repeats
+the zero-padded depth across the write bus and enables only its slot's bytes.
+This preserves independent pixel read/write addresses without a wide
+read-modify-write operation. DDR reads and writes use the same ports on the
+other physical bank. A simulation assertion enforces the bank-ownership rule.
+
+The shared read register drives each interface on its response cycle. A small
+hold register captures that response on the next edge, preserving its data
+even if the bank is subsequently read by the other interface. This maintains
+one-clock read latency and stable stalled pixel data across bank swaps.
+RAM data and its read registers have no reset; interface validity and masks
+invalidate old responses. The RTL uses synchronous reads, byte write enables
+and ``ram_style="block"``. The wide simple dual-port organization targets
+denser BRAM packing than separate shallow true dual-port memories per lane;
+actual packing and timing must be checked in synthesis.
 
 Depth samples must already use the chosen storage encoding. The stage does
 not round, saturate or convert the interpolator's signed F16 result. In
@@ -252,6 +265,12 @@ Verification
 ------------
 
 Run ``make -C tb/verilator test-depth`` for 16, 17, 24 and 32 depth bits.
+Run ``make -C tb/verilator test-z-buffer-line`` for direct storage checks at
+the same four widths. An independent byte-array model checks one-clock
+responses and held outputs on every cycle, simultaneous front-pixel/back-DDR
+access, bank reuse by the other interface, read-first collisions, individual
+byte masks, padding, both viewport bounds and memory retention through reset.
+Its deterministic seed is 8675309.
 Run ``make -C tb/verilator test-z-address`` to check the registered DDR address
 sequence for 16/32-bit slots, first/last byte masks, skipped zero-mask eviction
 beats, command stability under stalls and completion after write responses.

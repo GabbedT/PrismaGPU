@@ -523,13 +523,21 @@ module raster_engine_pixel_pipeline #(
     logic depth_valid, depth_discard, depth_result_load, bypass_valid_ff;
     logic [9:0] depth_x_ff;
     logic [8:0] depth_y_ff;
-    logic [2:0][35:0] depth_color_ff;
+    logic [2:0][15:0] clamped_color, depth_color_ff;
     logic [2:0][43:0] depth_texture_ff;
     logic [9:0] fragment_x_ff;
     logic [8:0] fragment_y_ff;
-    logic [2:0][35:0] fragment_color_ff;
+    logic [2:0][15:0] fragment_color_ff;
     logic [2:0][43:0] fragment_texture_ff;
     logic fragment_valid;
+
+    /* Saturate each evaluated sample once, retaining all F12 fraction bits.
+     * The signed 36-bit interpolator accumulators remain unchanged. Depth
+     * and texture stages only delay RGB, so this commutes with their holds
+     * and removes twenty payload bits per channel from every transit stage. */
+    for (genvar channel = 0; channel < 3; channel++) begin : clamp_rgb
+        assign clamped_color[channel] = clamp_fragment_color($signed(interpolated_color[channel]));
+    end
 
     /* Saturate signed F16 depth to unsigned Q0.16 without changing fractional scale */
     function automatic logic [15:0] depth_value(input logic signed [43:0] value);
@@ -598,7 +606,7 @@ module raster_engine_pixel_pipeline #(
         if (pixel_accept & config_i.z_test_enable) begin
             depth_x_ff <= source_x;
             depth_y_ff <= source_y;
-            depth_color_ff <= interpolated_color;
+            depth_color_ff <= clamped_color;
             depth_texture_ff <= interpolated_attributes[3:1];
         end
         if (config_i.z_test_enable) begin
@@ -611,7 +619,7 @@ module raster_engine_pixel_pipeline #(
         end else if (pixel_accept) begin
             fragment_x_ff <= source_x;
             fragment_y_ff <= source_y;
-            fragment_color_ff <= interpolated_color;
+            fragment_color_ff <= clamped_color;
             fragment_texture_ff <= interpolated_attributes[3:1];
         end
         /* With Z disabled, this register supplies the matching payload valid */
@@ -626,10 +634,10 @@ module raster_engine_pixel_pipeline #(
     logic textured_valid, texture_valid;
     logic [9:0] textured_x;
     logic [8:0] textured_y;
-    logic [2:0][35:0] textured_color;
+    logic [2:0][15:0] textured_color;
     logic [15:0] texel;
 
-    texturizer texture_transform (
+    texturizer #(.CLAMPED_COLOR(1'b1)) texture_transform (
         .clk_i           ( clk_i                           ),
         .rst_n_i         ( rst_n_i                         ),
         .stall_i         ( stall_i                         ),
@@ -658,7 +666,7 @@ module raster_engine_pixel_pipeline #(
 //      PIXEL BLENDER AND COMPLETION BARRIER
 //====================================================================================
 
-    pixel_blender blend_transform (
+    pixel_blender #(.CLAMPED_COLOR(1'b1)) blend_transform (
         .clk_i           ( clk_i          ),
         .rst_n_i         ( rst_n_i        ),
         .stall_i         ( stall_i        ),

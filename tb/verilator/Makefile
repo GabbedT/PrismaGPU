@@ -60,6 +60,7 @@ FWFLAGS := -march=rv64imafdc_zicsr -mabi=lp64d -mcmodel=medany -std=gnu11 -O2 -g
 .PHONY: build run apps list info test test-interpolator test-depth test-control \
         test-framebuffer test-raster-buffer test-triangle-buffer test-z-address test-span-address \
         test-math test-registers test-vertex-interpolator test-matrix test-cull test-arbiter test-rasterizer \
+        test-clip-engine test-color-transit test-z-buffer-line \
         lint video bench clean config
 build: $(BUILD)/obj/Vprisma_tb_top $(FIRMWARE)
 apps: $(addprefix $(BUILD)/app/,$(addsuffix .elf,$(APPS)))
@@ -172,6 +173,33 @@ test-vertex-interpolator:
 	    -Wno-CASEINCOMPLETE -j $(JOBS) --top-module vertex_interpolator_tb --Mdir $(BUILD)/vertex_interpolator \
 	    -F $(ROOT)/hw/geometry_engine/_geometry_engine.f sv/vertex_interpolator_tb.sv
 	$(BUILD)/vertex_interpolator/Vvertex_interpolator_tb
+
+test-clip-engine:
+	$(VERILATOR) --binary --timing --assert -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Wno-TIMESCALEMOD \
+	    -Wno-CASEINCOMPLETE -j $(JOBS) --top-module clip_engine_tb --Mdir $(BUILD)/clip_engine \
+	    -F $(ROOT)/hw/geometry_engine/_geometry_engine.f sv/clip_engine_tb.sv
+	$(BUILD)/clip_engine/Vclip_engine_tb
+
+test-color-transit:
+	$(VERILATOR) --binary --timing --assert -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Wno-TIMESCALEMOD \
+	    -j $(JOBS) --top-module color_transit_tb --Mdir $(BUILD)/color_transit \
+	    $(ROOT)/hw/pkg/texturizer_pkg.sv $(ROOT)/hw/pkg/pixel_blender_pkg.sv \
+	    $(ROOT)/hw/common/reciprocal_lut.sv \
+	    $(ROOT)/hw/raster_engine/texturizer/texture_coordinate.sv \
+	    $(ROOT)/hw/raster_engine/texturizer/texel_memory.sv \
+	    $(ROOT)/hw/raster_engine/texturizer/texturizer.sv \
+	    $(ROOT)/hw/raster_engine/pixel_blender/pixel_blender.sv sv/color_transit_tb.sv
+	$(BUILD)/color_transit/Vcolor_transit_tb
+
+test-z-buffer-line:
+	@for depth_width in 16 17 24 32; do \
+	    $(VERILATOR) --binary --timing --assert -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Wno-TIMESCALEMOD \
+	        -j $(JOBS) --top-module z_buffer_line_tb -GZ_WIDTH=$$depth_width \
+	        --Mdir $(BUILD)/z_buffer_line_$$depth_width \
+	        $(ROOT)/hw/pkg/texturizer_pkg.sv $(ROOT)/hw/pkg/re_registers_pkg.sv \
+	        $(ROOT)/hw/raster_engine/z_test/z_buffer_line.sv sv/z_buffer_line_tb.sv && \
+	    $(BUILD)/z_buffer_line_$$depth_width/Vz_buffer_line_tb || exit $$?; \
+	done
 
 test-registers:
 	$(VERILATOR) --binary --timing --assert -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Wno-TIMESCALEMOD \

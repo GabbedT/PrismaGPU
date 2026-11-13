@@ -149,6 +149,17 @@ it first reads the old beat and merges only dirty bits. Untouched bytes and
 nibbles remain unchanged. The CPU and other masters must not write this
 surface concurrently with rendering.
 
+An accepted write retains a compact descriptor: the 12-bit RGB444 value,
+a five-bit nibble offset, and a two-bit remaining-nibble count. MERGE expands
+that descriptor into the current 128-bit data and dirty mask. At offsets 30
+and 31, the first beat consumes two or one nibbles respectively; the next
+descriptor retains the remaining high nibble(s), with offset zero. The
+complete one/two-beat address range is validated before the first merge or
+flush, including address carry. Expansion adds no state or cycle, and an
+abort discards both the descriptor and any locally buffered first beat.
+The compact payload uses 19 declared register bits instead of two expanded
+140-bit registers; the actual FF/LUT mapping depends on synthesis.
+
 The destination-read service accepts x/y and returns one RGB444 pixel with
 valid/ready backpressure. A tagged 128-bit cache serves adjacent hits without
 DDR. Split pixels require two beats and a temporary partial-pixel register.

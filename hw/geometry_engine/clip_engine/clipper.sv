@@ -6,7 +6,8 @@ module clipper (
     input logic rst_n_i,
     input logic stall_i,
 
-    /* Triangle coming from triangle buffer */
+    /* Triangle owned by the upstream buffer. Keep stable from start_i until
+     * clipping/assembly completes, including every stalled INIT cycle. */
     input triangle_t triangle_i,
     input logic start_i,
 
@@ -32,25 +33,6 @@ module clipper (
     localparam logic [2:0] LEFT_PLANE = 3'd0;
     localparam logic [2:0] NEAR_PLANE = 3'd5;
 
-    function automatic logic on_plane (input logic [2:0] plane, input position_t pos);
-        logic signed [32:0] x, y, z, w;
-
-        x = {pos.x[31], pos.x};
-        y = {pos.y[31], pos.y};
-        z = {pos.z[31], pos.z};
-        w = {pos.w[31], pos.w};
-
-        case (plane)
-            3'd0: on_plane = (w + x) == 0;
-            3'd1: on_plane = (w - x) == 0;
-            3'd2: on_plane = (w - y) == 0;
-            3'd3: on_plane = (w + y) == 0;
-            3'd4: on_plane = (w - z) == 0;
-            3'd5: on_plane = z == 0;
-            default: on_plane = 1'b0;
-        endcase
-    endfunction
-
 //====================================================================================
 //      REGISTERS
 //====================================================================================
@@ -62,7 +44,6 @@ module clipper (
 
     fsm_state_t state_CRT, state_NXT;
 
-    triangle_t triangle_CRT, triangle_NXT;
     logic closing_edge_CRT, closing_edge_NXT;
     logic [1:0] init_count_CRT, init_count_NXT;
     logic [2:0] plane_CRT, plane_NXT;
@@ -79,7 +60,6 @@ module clipper (
 
     always_ff @(posedge clk_i) begin
         if (!stall_i) begin
-            triangle_CRT <= triangle_NXT;
             plane_CRT <= plane_NXT;
             closing_edge_CRT <= closing_edge_NXT;
             source_count_CRT <= source_count_NXT;
@@ -99,6 +79,7 @@ module clipper (
 
     vertex_t intersection_vertex;
     logic intersection_valid, invalid_edge, interpolator_start;
+    logic signed [32:0] crt_distance, nxt_distance;
 
     /* When two point crosses a plane, it produce the intersect point
      * with interpolated data */
@@ -113,46 +94,32 @@ module clipper (
         .nxt_vertex_i ( nxt_vertex_CRT ),
         .plane_i      ( plane_CRT      ),
 
+        .crt_distance_o ( crt_distance ),
+        .nxt_distance_o ( nxt_distance ),
+
         .intersection_vertex_o ( intersection_vertex ),
         .valid_o               ( intersection_valid  ),
         .invalid_edge_o        ( invalid_edge        )
     );
 
 //====================================================================================
-//      CLIP TESTER
+//      CURRENT-PLANE CLASSIFICATION
 //====================================================================================
 
-    logic [5:0] crt_clip_code, nxt_clip_code;
     logic crt_is_inside, nxt_is_inside;
     logic crt_on_plane, nxt_on_plane;
 
-    clip_tester crt_tester (
-        .x_i ( crt_vertex_CRT.pos.x ),
-        .y_i ( crt_vertex_CRT.pos.y ),
-        .z_i ( crt_vertex_CRT.pos.z ),
-        .w_i ( crt_vertex_CRT.pos.w ),
-
-        .clip_code_o ( crt_clip_code )
-    );
-
-    clip_tester nxt_tester (
-        .x_i ( nxt_vertex_CRT.pos.x ),
-        .y_i ( nxt_vertex_CRT.pos.y ),
-        .z_i ( nxt_vertex_CRT.pos.z ),
-        .w_i ( nxt_vertex_CRT.pos.w ),
-
-        .clip_code_o ( nxt_clip_code )
-    );
-
     /* Classify the captured vertices after the FIFO read, before deciding
-     * the edge action. Keep the FWFT mux out of plane arithmetic/reduction. */
+     * the edge action. Reuse the interpolator's distances for both sign and
+     * equality: zero remains inside. The original classification register
+     * keeps the FWFT mux out of plane arithmetic/reduction. */
     always_ff @(posedge clk_i) begin
         if (!stall_i) begin
-            crt_is_inside <= !crt_clip_code[plane_CRT];
-            nxt_is_inside <= !nxt_clip_code[plane_CRT];
+            crt_is_inside <= !crt_distance[32];
+            nxt_is_inside <= !nxt_distance[32];
 
-            crt_on_plane <= on_plane(plane_CRT, crt_vertex_CRT.pos);
-            nxt_on_plane <= on_plane(plane_CRT, nxt_vertex_CRT.pos);
+            crt_on_plane <= crt_distance == 0;
+            nxt_on_plane <= nxt_distance == 0;
         end
     end
 
@@ -164,7 +131,6 @@ module clipper (
     always_comb begin
         /* Default values */
         state_NXT = state_CRT;
-        triangle_NXT = triangle_CRT;
         plane_NXT = plane_CRT;
         closing_edge_NXT = closing_edge_CRT;
         source_count_NXT = source_count_CRT;
@@ -190,18 +156,18 @@ module clipper (
                 /* Start with left plane */
                 plane_NXT = LEFT_PLANE;
 
-                triangle_NXT = triangle_i;
                 init_count_NXT = '0;
                 destination_count_NXT = '0;
             end
 
             INIT: begin
-                /* Write the first three vertices in fifo */
+                /* The upstream buffer retains this triangle until done_o;
+                 * initialize the polygon directly without a second copy. */
                 fifo_write_o = 1'b1;
                 case (init_count_CRT)
-                    2'd0: fifo_vtx_write_o = triangle_CRT.vtx[0];
-                    2'd1: fifo_vtx_write_o = triangle_CRT.vtx[1];
-                    default: fifo_vtx_write_o = triangle_CRT.vtx[2];
+                    2'd0: fifo_vtx_write_o = triangle_i.vtx[0];
+                    2'd1: fifo_vtx_write_o = triangle_i.vtx[1];
+                    default: fifo_vtx_write_o = triangle_i.vtx[2];
                 endcase
 
                 if (init_count_CRT == 2'd2) begin

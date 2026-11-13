@@ -16,6 +16,11 @@ module vertex_interpolator (
     /* Plane to calculate distance */
     input logic [2:0] plane_i,
 
+    /* Combinational signed F16 distances, shared with edge classification.
+     * They follow the held endpoints/plane and are not gated by start_i. */
+    output logic signed [32:0] crt_distance_o,
+    output logic signed [32:0] nxt_distance_o,
+
     output vertex_t intersection_vertex_o,
     output logic valid_o,
     output logic invalid_edge_o
@@ -36,28 +41,37 @@ module vertex_interpolator (
 
 
     function automatic logic signed [32:0] plane_distance (input logic [2:0] plane, input position_t vtx_pos);
-        logic signed [32:0] x, y, z, w;
+        logic signed [32:0] base, coordinate;
+        logic subtract;
 
-        x = {vtx_pos.x[31], vtx_pos.x};
-        y = {vtx_pos.y[31], vtx_pos.y};
-        z = {vtx_pos.z[31], vtx_pos.z};
-        w = {vtx_pos.w[31], vtx_pos.w};
+        /* Select before arithmetic: one guarded add/sub per endpoint rather
+         * than computing all plane distances and selecting their results.
+         * Extending before subtraction preserves the full signed-32 range. */
+        base = {vtx_pos.w[31], vtx_pos.w};
+        coordinate = '0;
+        subtract = 1'b0;
 
         case (plane)
-            LEFT_PLANE:   plane_distance = w + x;
-
-            RIGHT_PLANE:  plane_distance = w - x;
-
-            TOP_PLANE:    plane_distance = w - y;
-
-            BOTTOM_PLANE: plane_distance = w + y;
-
-            FAR_PLANE:    plane_distance = w - z;
-
-            NEAR_PLANE:   plane_distance = z;
-
-            default:      plane_distance = '0;
+            LEFT_PLANE, RIGHT_PLANE: begin
+                coordinate = {vtx_pos.x[31], vtx_pos.x};
+                subtract = plane == RIGHT_PLANE;
+            end
+            TOP_PLANE, BOTTOM_PLANE: begin
+                coordinate = {vtx_pos.y[31], vtx_pos.y};
+                subtract = plane == TOP_PLANE;
+            end
+            FAR_PLANE: begin
+                coordinate = {vtx_pos.z[31], vtx_pos.z};
+                subtract = 1'b1;
+            end
+            NEAR_PLANE: begin
+                base = '0;
+                coordinate = {vtx_pos.z[31], vtx_pos.z};
+            end
+            default: base = '0;
         endcase
+
+        return base + (coordinate ^ {33{subtract}}) + subtract;
     endfunction
 
 
@@ -66,13 +80,12 @@ module vertex_interpolator (
 //====================================================================================  
 
     /* Variables relative to current vertex and next vertex */
-    logic signed [32:0] crt_distance, nxt_distance; 
     logic signed [32:0] crt_distance_ff, nxt_distance_ff;
     logic divider_start_ff;
     
-    assign crt_distance = plane_distance(plane_i, crt_vertex_i.pos);
+    assign crt_distance_o = plane_distance(plane_i, crt_vertex_i.pos);
 
-    assign nxt_distance = plane_distance(plane_i, nxt_vertex_i.pos);
+    assign nxt_distance_o = plane_distance(plane_i, nxt_vertex_i.pos);
 
     /* Keep plane selection/addition before a register, and magnitude/division
      * after it. The delayed start and both distances freeze together on stall.
@@ -87,8 +100,8 @@ module vertex_interpolator (
 
     always_ff @(posedge clk_i) begin
         if (!stall_i & start_i) begin
-            crt_distance_ff <= crt_distance;
-            nxt_distance_ff <= nxt_distance;
+            crt_distance_ff <= crt_distance_o;
+            nxt_distance_ff <= nxt_distance_o;
         end
     end
 

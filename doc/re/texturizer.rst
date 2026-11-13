@@ -8,6 +8,12 @@ selects one texel, and returns that texel beside the original fragment. The
 pixel blender can then combine the color and texel. The texturizer does not
 mix colors or test alpha itself.
 
+In the integrated raster pipeline, RGB has already been saturated to the
+blender's channel range after interpolation. It travels through the depth
+and texture stages as unsigned 16-bit F12, retaining every fractional bit.
+The standalone texturizer defaults to preserving signed 36-bit F12; its
+``CLAMPED_COLOR`` parameter selects the narrow interface used by the GPU.
+
 This block is a fixed-latency pipeline rather than a command-driven state
 machine. It can accept consecutive fragments, and all values belonging to a
 fragment travel together so the returned texel cannot drift onto a different

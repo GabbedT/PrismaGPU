@@ -181,16 +181,23 @@ The setup math unit validates each microinstruction's opcode, destinations
 and signed operand widths in a separate ``VALIDATE`` cycle before ``ISSUE``.
 The registered result gates unit requests and arithmetic capture. The same
 cycle also captures the signed shift count, output width and conversion
-enable, sign correction and the selected 88-bit add/sub operands, separating
-parameter/source decoding from arithmetic and overflow checks. The 89-bit
-guarded adder and all fixed-point scales are retained. The reciprocal captures
+enable, sign correction and the selected 54-bit add/sub operands, separating
+parameter/source decoding from arithmetic and overflow checks. The three
+temporary registers also use 54 signed bits, and the adder has a 55th guard bit.
+Attribute differences fit 33 bits, coordinate differences fit at most 19 bits,
+their products fit 52 bits, and subtracting two products fits 53 bits. Edge and
+attribute-reference sums fit the same bound; a packed reciprocal uses 41 bits.
+Thus the temporary path retains every fractional bit with one spare bit. A
+simulation assertion checks representability on every temporary writeback.
+Final multiplication still produces all 87 product bits, and scaling,
+rounding, overflow checks and the response remain 88 bits. The reciprocal captures
 the unsigned 39-bit denominator magnitude on request acceptance before its
 existing normalization cycle; the minimum signed 38-bit value stays exact.
 Result representability selects among fixed signed widths (18, 19, 24, 32,
 33, 44 or 88 bits), using constant sign-extension checks instead of a variable
 shift. This preserves the exact limits without adding an execution cycle.
-Validation adds one clock per executed microinstruction; arithmetic widths,
-signedness, rounding and response backpressure are unchanged. Operands and configuration
+Validation adds one clock per executed microinstruction; signedness, precision,
+rounding and response backpressure are unchanged by temporary narrowing. Operands and configuration
 remain stable until the command response is consumed.
 ``make -C tb/verilator test-math`` checks all six programs with independent
 integer arithmetic, exact reciprocal cases, signed rounding, extreme shifts,
