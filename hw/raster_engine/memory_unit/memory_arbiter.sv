@@ -76,17 +76,20 @@ module memory_arbiter #(
     typedef enum logic [1:0] {
         IDLE,
         PRESENT,
-        WAIT_RESPONSE
+        WAIT_RESPONSE,
+        RESPOND
     } state_t;
 
     state_t state_CRT, state_NXT;
     logic completed, failed;
+    logic response_failed;
+    logic [127:0] response_data;
 
     assign accept_request = (state_CRT == IDLE) & grant_valid & !abort_i;
     assign completed = WRITE ? ddr.write_valid : ddr.read_valid;
     assign failed = WRITE ? ddr.write_error : ddr.read_error;
 
-    assign data_o = ddr.rdata;
+    assign data_o = response_data;
     assign idle_o = state_CRT == IDLE;
     assign ddr.trx_req = state_CRT == PRESENT;
     assign ddr.trx_type = WRITE;
@@ -113,16 +116,31 @@ module memory_arbiter #(
 
             WAIT_RESPONSE: begin
                 if (completed) begin
-                    response_o[owner] = 1'b1;
-                    error_o[owner] = failed;
-                    state_NXT = IDLE;
+                    state_NXT = RESPOND;
                 end
+            end
+
+            RESPOND: begin
+                response_o[owner] = 1'b1;
+                error_o[owner] = response_failed;
+                state_NXT = IDLE;
             end
 
             default: begin
                 state_NXT = IDLE;
             end
         endcase
+    end
+
+    /* Complete the reserved transaction atomically before exposing it to a
+     * client: data and error travel with the same registered response pulse.
+     * Keep ownership and idle asserted as busy through this extra cycle,
+     * including abort/drain, so no barrier can pass an undelivered response. */
+    always_ff @(posedge clk_i) begin
+        if (state_CRT == WAIT_RESPONSE && completed) begin
+            response_data <= WRITE ? '0 : ddr.rdata;
+            response_failed <= failed;
+        end
     end
 
     /* Abort blocks new work; presented requests still complete normally. */

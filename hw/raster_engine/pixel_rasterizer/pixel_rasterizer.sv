@@ -54,7 +54,7 @@ module pixel_rasterizer #(
 
 
     typedef enum logic [2:0] {
-        IDLE, Y_LOOP_SETUP, X_LOOP_SETUP, RASTER_PIXEL, INCREMENT_Y, RASTER_END
+        IDLE, Y_LOOP_SETUP, X_LOOP_SETUP, SPAN_EMIT, RASTER_PIXEL, INCREMENT_Y, RASTER_END
     } state_t;
 
     state_t state_CRT, state_NXT;
@@ -107,8 +107,12 @@ module pixel_rasterizer #(
     assign flat_top = ((couple_CRT == TB_TM) && !edge_CRT[TM].valid);
     assign flat_bottom = ((couple_CRT == TB_MB) && !edge_CRT[MB].valid);
 
-    assign x_left_pixel = ($signed(x_left_CRT) + 33'sd2047) >>> 12;
-    assign x_right_pixel = (($signed(x_right_CRT) + 33'sd2047) >>> 12) - 33'sd1;
+    /* Round F12 at the half-pixel boundary using one integer carry chain.
+     * Preserve the signed 33-bit result before clipping/narrowing. */
+    assign x_left_pixel = ($signed({x_left_CRT[31], x_left_CRT}) >>> 12) +
+                          (x_left_CRT[11:0] > 12'h800 ? 33'sd1 : 33'sd0);
+    assign x_right_pixel = ($signed({x_right_CRT[31], x_right_CRT}) >>> 12) -
+                           (x_right_CRT[11:0] <= 12'h800 ? 33'sd1 : 33'sd0);
 
     assign outside_bb = (x_left_pixel > $signed({23'b0, bb_x_end_i})) | (x_right_pixel < $signed({23'b0, bb_x_start_i}));
 
@@ -231,6 +235,10 @@ module pixel_rasterizer #(
                     /* Check before narrowing the signed span bounds */
                     if ((x_left_pixel > x_right_pixel) | outside_bb | (bb_x_start_i > bb_x_end_i)) begin
                         state_NXT = INCREMENT_Y;
+                    end else if (SPAN_ONLY) begin
+                        /* Emit from the captured bounds on the next cycle,
+                         * after rounding/empty-row tests have completed. */
+                        state_NXT = SPAN_EMIT;
                     end else begin
                         /* Initialize interpolation before the first pixel */
                         pixel_x_o = x_start_NXT[9:0];
@@ -239,6 +247,14 @@ module pixel_rasterizer #(
                         
                         new_line_o = 1'b1;
                     end
+                end
+
+                SPAN_EMIT: begin
+                    pixel_x_o = x_start_CRT[9:0];
+                    span_x_end_o = x_end_CRT[9:0];
+                    pixel_y_o = y_start_CRT + y_index_CRT[8:0];
+                    new_line_o = 1'b1;
+                    state_NXT = INCREMENT_Y;
                 end
 
                 RASTER_PIXEL: begin

@@ -29,7 +29,9 @@ module triangle_buffer (
                 fill_valid <= '0;
             end else if (!stall_i) begin
                 if ((fill_valid == '1) & accept_i) begin
-                    fill_valid <= valid_i ? 3'b100 : 3'b000;
+                    /* The producer is still stalled on this edge. Its held
+                     * vertex can enter on the following cycle, after clear. */
+                    fill_valid <= '0;
                 end else if (valid_i & !full_o) begin
                     fill_valid <= {1'b1, fill_valid[2:1]};
                 end
@@ -38,7 +40,10 @@ module triangle_buffer (
 
     assign valid_o = fill_valid == '1;
 
-    assign full_o = (fill_valid == '1) & !accept_i;
+    /* Occupancy alone drives upstream backpressure. Do not send the clip
+     * engine's geometry-dependent completion back to the matrix DSP enables.
+     * Reusing this slot takes one cycle after triangle acceptance. */
+    assign full_o = fill_valid == '1;
 
 endmodule : triangle_buffer
 

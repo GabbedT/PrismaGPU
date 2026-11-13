@@ -164,9 +164,22 @@ module command_processor (
     logic resume_valid, draw_config_valid, draw_address_valid, stream_address_valid;
     logic [34:0] primitive_limit;
     logic [32:0] command_next, framebuffer_limit, z_limit, texture_limit;
+    logic command_last_CRT;
     logic [31:0] framebuffer_bytes;
     logic [31:0] z_bytes;
     logic [13:0] texture_bytes;
+    logic list_valid_CRT, framebuffer_valid_CRT, z_valid_CRT, draw_config_valid_CRT;
+
+    /* Configuration is stable while busy. START first enters INITIALIZE,
+     * so these checks have a full sampling edge before they are consumed,
+     * including when configuration and START arrive together. Keep address
+     * arithmetic out of memory initialization and pixel backpressure paths. */
+    always_ff @(posedge clk_i) begin
+        list_valid_CRT <= list_valid;
+        framebuffer_valid_CRT <= framebuffer_valid;
+        z_valid_CRT <= z_valid;
+        draw_config_valid_CRT <= draw_config_valid;
+    end
 
         always_comb begin
             texture_bytes = 14'd128;
@@ -221,6 +234,18 @@ module command_processor (
 
     /* Keep carry bits until after range checks. */
     assign command_next = {1'b0, command_pointer_i} + 33'd4;
+
+    /* Pointer and END stay fixed while an accepted command executes. Capture
+     * its last-word test with the command, before command_active_CRT becomes
+     * visible. This keeps the 33-bit increment/comparison out of live STATUS
+     * reads without delaying CMD_EXHAUSTED. The active flag guards this
+     * unreset payload; the pointer equality still reports an empty/end list. */
+    always_ff @(posedge clk_i) begin
+        if (command_valid_i & command_ready_o) begin
+            command_last_CRT <= command_next == {1'b0, command_end_i};
+        end
+    end
+
     assign primitive_limit = primitive_pointer_i + (command_CRT.payload.primitive_count << 6);
     assign draw_range_valid = primitive_limit <= primitive_end_i;
     assign texture_limit = {1'b0, command_CRT.payload.address_upper, 4'b0} + {19'b0, texture_bytes};
@@ -230,7 +255,7 @@ module command_processor (
                             (saved_primitive_base_CRT == primitive_base_i) & (saved_primitive_end_CRT == primitive_end_i);
 
     assign draw_config_valid = !config_i.texture_en | config_i.perspective_correct;
-    assign stream_address_valid = framebuffer_valid & (!config_i.z_test_enable | z_valid);
+    assign stream_address_valid = framebuffer_valid_CRT & (!config_i.z_test_enable | z_valid_CRT);
     assign draw_address_valid = draw_range_valid & stream_address_valid;
 
 
@@ -275,7 +300,7 @@ module command_processor (
         done_o = 1'b0;
         paused_o = 1'b0;
         cmd_exhausted_o = list_loaded_CRT & ((command_pointer_i == command_end_i) |
-                          (command_active_CRT & (command_next == {1'b0, command_end_i})));
+                          (command_active_CRT & command_last_CRT));
         notify_valid_o = 1'b0;
         notify_id_o = '0;
         command_error_o = command_error_CRT;
@@ -364,15 +389,15 @@ module command_processor (
             end
 
             INITIALIZE: begin
-                memory_initialize_o = passthrough_i ? (stream_address_valid & draw_config_valid) : list_valid;
+                memory_initialize_o = passthrough_i ? (stream_address_valid & draw_config_valid_CRT) : list_valid_CRT;
 
                 memory_fault = memory_error_i;
                 pipeline_fault = !soft_reset_i & pipeline_done_i & pipeline_error_i;
 
-                list_loaded_NXT = !passthrough_i & list_valid;
+                list_loaded_NXT = !passthrough_i & list_valid_CRT;
 
                 if (passthrough_i) begin
-                    if (!draw_config_valid) begin
+                    if (!draw_config_valid_CRT) begin
                         config_error_NXT = 1'b1;
                         state_NXT = ERROR_DRAIN;
                     end else if (!stream_address_valid) begin
@@ -381,7 +406,7 @@ module command_processor (
                     end else begin
                         state_NXT = STREAM_RUN;
                     end
-                end else if (!list_valid) begin
+                end else if (!list_valid_CRT) begin
                     address_error_NXT = 1'b1;
                     state_NXT = ERROR_DRAIN;
                 end else begin
@@ -436,7 +461,7 @@ module command_processor (
                         if (command_CRT.payload.primitive_count == 0) begin
                             /* Nothing to do, no primitive to fetch */
                             state_NXT = COMMIT;
-                        end else if (!draw_config_valid) begin
+                        end else if (!draw_config_valid_CRT) begin
                             /* Invalid config, can't draw */
                             state_NXT = ERROR_DRAIN;
 
@@ -480,7 +505,7 @@ module command_processor (
                             state_NXT = ERROR_DRAIN;
                             
                             command_error_NXT = 1'b1;
-                        end else if (!z_valid) begin
+                        end else if (!z_valid_CRT) begin
                             state_NXT = ERROR_DRAIN;
 
                             address_error_NXT = 1'b1;

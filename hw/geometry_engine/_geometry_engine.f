@@ -3,6 +3,7 @@
 
 buffer/triangle_buffer.sv
 buffer/proc_triangle_buffer.sv
+buffer/raster_triangle_buffer.sv
 
 matrix_engine/line_multiplier.sv
 matrix_engine/matrix_engine.sv

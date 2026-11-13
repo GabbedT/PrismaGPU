@@ -233,7 +233,8 @@ public:
             if (length != 4 || address % 4 || address >= 512) return false;
             sim.dut.reg_read_i = 1;
             sim.dut.reg_read_address_i = address/4;
-            sim.dut.eval();
+            sim.tick();
+            sim.dut.reg_read_i = 0;
             const bool error = sim.dut.reg_read_error_o;
             value = sim.dut.reg_read_data_o;
             if (sim.options.trace) {
@@ -241,7 +242,6 @@ public:
                 line << "[MMIO] cycle=" << sim.cycles << " read +0x" << std::hex << address << " =0x" << value;
                 sim.log(line.str());
             }
-            sim.tick(); sim.dut.reg_read_i = 0;
             if (error) throw std::runtime_error("GPU register read rejected at " + std::to_string(address));
         } else {
             if (address % length) return false;
@@ -293,14 +293,14 @@ public:
             sim.dut.reg_write_address_i = address/4;
             sim.dut.reg_write_data_i = value;
             sim.dut.reg_write_strobe_i = 15;
-            sim.dut.eval();
+            sim.tick();
+            sim.dut.reg_write_i = 0;
             const bool error = sim.dut.reg_write_error_o;
             if (sim.options.trace) {
                 std::ostringstream line;
                 line << "[MMIO] cycle=" << sim.cycles << " write +0x" << std::hex << address << " =0x" << value;
                 sim.log(line.str());
             }
-            sim.tick(); sim.dut.reg_write_i = 0;
             if (error) throw std::runtime_error("GPU register write rejected at " + std::to_string(address));
             return true;
         }

@@ -88,6 +88,7 @@ module z_buffer_controller #(
     logic [1:0][9:0] start_CRT, start_NXT, end_CRT, end_NXT;
     logic [1:0][ADDRESS_WIDTH - 1:0] address_CRT, address_NXT;
     logic [9:0] word_CRT, word_NXT;
+    logic [ADDRESS_WIDTH - 1:0] ddr_address_CRT, ddr_address_NXT;
     logic [127:0] data_CRT, data_NXT;
     logic [15:0] mask_CRT, mask_NXT;
     logic new_line_CRT, new_line_NXT, done_CRT, done_NXT;
@@ -122,6 +123,7 @@ module z_buffer_controller #(
             end_CRT <= end_NXT;
             address_CRT <= address_NXT;
             word_CRT <= word_NXT;
+            ddr_address_CRT <= ddr_address_NXT;
             data_CRT <= data_NXT;
             mask_CRT <= mask_NXT;
         end
@@ -170,6 +172,7 @@ module z_buffer_controller #(
             end_NXT = end_CRT;
             address_NXT = address_CRT;
             word_NXT = word_CRT;
+            ddr_address_NXT = ddr_address_CRT;
             data_NXT = data_CRT;
             mask_NXT = mask_CRT;
             new_line_NXT = 1'b0;
@@ -189,7 +192,7 @@ module z_buffer_controller #(
             buffer_ddr_mask_o = word_mask;
             ddr_request_o = 1'b0;
             ddr_write_o = 1'b0;
-            ddr_address_o = address_CRT[transfer_CRT] + (word_CRT << BYTE_SHIFT);
+            ddr_address_o = ddr_address_CRT;
             ddr_write_data_o = data_CRT;
             ddr_mask_o = word_mask;
 
@@ -273,6 +276,10 @@ module z_buffer_controller #(
                     if (service_valid) begin
                         transfer_NXT = service_bank;
                         word_NXT = (start_CRT[service_bank] >> LANE_BITS) << LANE_BITS;
+                        /* Calculate once before issuing a transfer; subsequent
+                         * words advance by one DDR beat. No wide adder sits in
+                         * the downstream range-check/ready handshake path. */
+                        ddr_address_NXT = address_CRT[service_bank] + (ADDRESS_WIDTH'(word_NXT) << BYTE_SHIFT);
                         if (bank_CRT[service_bank] == EVICT_PENDING) begin
                             bank_NXT[service_bank] = EVICTING;
                             memory_NXT = EVICT_READ;
@@ -296,6 +303,7 @@ module z_buffer_controller #(
                             memory_NXT = MEMORY_IDLE;
                         end else begin
                             word_NXT = word_CRT + LANES[9:0];
+                            ddr_address_NXT = ddr_address_CRT + ADDRESS_WIDTH'(16);
                             memory_NXT = FILL_REQUEST;
                         end
                     end
@@ -318,6 +326,7 @@ module z_buffer_controller #(
                             memory_NXT = MEMORY_IDLE;
                         end else begin
                             word_NXT = word_CRT + LANES[9:0];
+                            ddr_address_NXT = ddr_address_CRT + ADDRESS_WIDTH'(16);
                             memory_NXT = EVICT_READ;
                         end
                     end
@@ -338,6 +347,7 @@ module z_buffer_controller #(
                             memory_NXT = MEMORY_IDLE;
                         end else begin
                             word_NXT = word_CRT + LANES[9:0];
+                            ddr_address_NXT = ddr_address_CRT + ADDRESS_WIDTH'(16);
                             memory_NXT = EVICT_READ;
                         end
                     end

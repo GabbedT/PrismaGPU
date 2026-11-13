@@ -61,31 +61,36 @@ module vertex_interpolator (
     endfunction
 
 
-    function automatic logic [3:0] interpolate_color (
-        input logic [3:0] start_value,
-        input logic [3:0] end_value,
-        input logic [16:0] t
-    );
-        logic signed [4:0] delta;
-        logic signed [22:0] product;
-
-        delta = $signed({1'b0, end_value}) - $signed({1'b0, start_value});
-        product = delta * $signed({1'b0, t});
-
-        interpolate_color = start_value + (product >>> 16);
-    endfunction
-
-
 //====================================================================================
 //      PLANE DISTANCE
 //====================================================================================  
 
     /* Variables relative to current vertex and next vertex */
     logic signed [32:0] crt_distance, nxt_distance; 
+    logic signed [32:0] crt_distance_ff, nxt_distance_ff;
+    logic divider_start_ff;
     
     assign crt_distance = plane_distance(plane_i, crt_vertex_i.pos);
 
     assign nxt_distance = plane_distance(plane_i, nxt_vertex_i.pos);
+
+    /* Keep plane selection/addition before a register, and magnitude/division
+     * after it. The delayed start and both distances freeze together on stall.
+     * This adds one advancing cycle per intersection; no arithmetic changes. */
+    always_ff @(posedge clk_i or negedge rst_n_i) begin
+        if (!rst_n_i) begin
+            divider_start_ff <= 1'b0;
+        end else if (!stall_i) begin
+            divider_start_ff <= start_i;
+        end
+    end
+
+    always_ff @(posedge clk_i) begin
+        if (!stall_i & start_i) begin
+            crt_distance_ff <= crt_distance;
+            nxt_distance_ff <= nxt_distance;
+        end
+    end
 
 
 //====================================================================================
@@ -98,7 +103,7 @@ module vertex_interpolator (
     /* Round t toward the inside endpoint; exact fractions stay unchanged */
     always_ff @(posedge clk_i) begin
         if (!stall_i & valid & !invalid_edge) begin
-            t <= fraction + {16'b0, (crt_distance[32] & fraction_inexact)};
+            t <= fraction + {16'b0, (crt_distance_ff[32] & fraction_inexact)};
         end
     end
 
@@ -108,10 +113,10 @@ module vertex_interpolator (
         .rst_n_i ( rst_n_i ),
         .stall_i ( stall_i ),
 
-        .plane_start_i ( crt_distance ),
-        .plane_end_i   ( nxt_distance ),
+        .plane_start_i ( crt_distance_ff ),
+        .plane_end_i   ( nxt_distance_ff ),
 
-        .data_valid_i ( start_i ),
+        .data_valid_i ( divider_start_ff ),
 
         .fraction_o         ( fraction         ),
         .fraction_inexact_o ( fraction_inexact ),
@@ -136,6 +141,9 @@ module vertex_interpolator (
     logic round_position_delta_ff, round_position_ff;
     logic [31:0] position_integral;
     logic integer_lsb, round_up, carry_in;
+    logic signed [4:0] color_delta_ff;
+    logic [3:0] color_start_ff;
+    logic signed [22:0] color_product;
 
     /* First stage: subtract, retaining the matching start value and rounding. */
     assign position_delta = {nxt_pos[31], nxt_pos} - {crt_pos[31], crt_pos};
@@ -170,7 +178,20 @@ module vertex_interpolator (
     /* Final interpolated position */
     assign interpolated_position = {position_integral[31:1], (integer_lsb ^ round_up)};
 
-    assign interpolated_color = interpolate_color(crt_col, nxt_col, t);
+    /* Select each color one cycle before its writeback, starting in INTP_V.
+     * Register the signed nibble delta and matching start value before the
+     * 5x18 multiply. Preserve floor/truncation and four-bit wrapping; t and
+     * both endpoints remain stable through valid_o. All stages freeze on
+     * stall, and no additional intersection cycle is needed. */
+    always_ff @(posedge clk_i) begin
+        if (!stall_i) begin
+            color_delta_ff <= $signed({1'b0, nxt_col}) - $signed({1'b0, crt_col});
+            color_start_ff <= crt_col;
+        end
+    end
+
+    assign color_product = color_delta_ff * $signed({1'b0, t});
+    assign interpolated_color = color_start_ff + (color_product >>> 16);
 
 
 //====================================================================================
@@ -273,6 +294,8 @@ module vertex_interpolator (
                 INTP_V: begin
                     crt_pos = crt_vertex_i.tex.v;
                     nxt_pos = nxt_vertex_i.tex.v;
+                    crt_col = crt_vertex_i.col.r;
+                    nxt_col = nxt_vertex_i.col.r;
 
                     new_vertex_NXT.pos.w = interpolated_position;
 
@@ -280,8 +303,8 @@ module vertex_interpolator (
                 end
 
                 INTP_R: begin
-                    crt_col = crt_vertex_i.col.r;
-                    nxt_col = nxt_vertex_i.col.r;
+                    crt_col = crt_vertex_i.col.g;
+                    nxt_col = nxt_vertex_i.col.g;
 
                     new_vertex_NXT.tex.u = interpolated_position;
                     new_vertex_NXT.col.r = interpolated_color;
@@ -305,8 +328,8 @@ module vertex_interpolator (
                 end
 
                 INTP_G: begin
-                    crt_col = crt_vertex_i.col.g;
-                    nxt_col = nxt_vertex_i.col.g;
+                    crt_col = crt_vertex_i.col.b;
+                    nxt_col = nxt_vertex_i.col.b;
 
                     new_vertex_NXT.tex.v = interpolated_position;
                     new_vertex_NXT.col.g = interpolated_color;
@@ -315,8 +338,8 @@ module vertex_interpolator (
                 end
 
                 INTP_B: begin
-                    crt_col = crt_vertex_i.col.b;
-                    nxt_col = nxt_vertex_i.col.b;
+                    crt_col = crt_vertex_i.col.a;
+                    nxt_col = nxt_vertex_i.col.a;
 
                     new_vertex_NXT.col.b = interpolated_color;
 
@@ -324,9 +347,6 @@ module vertex_interpolator (
                 end
 
                 INTP_A: begin
-                    crt_col = crt_vertex_i.col.a;
-                    nxt_col = nxt_vertex_i.col.a;
-                    
                     new_vertex_NXT.col.a = interpolated_color;
 
                     valid_NXT = 1'b1;

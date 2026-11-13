@@ -23,7 +23,6 @@ module triangle_reciprocal (
     typedef enum logic [2:0] {R_IDLE, NORMALIZE, SEED, PRODUCT_MX, CORRECTION, PRODUCT_XC, UPDATE_X, R_RESPONSE} recip_state_t;
 
     recip_state_t state_CRT, state_NXT;
-    logic signed [37:0] denominator_reg;
     denominator_format_t format_reg;
     logic signed [38:0] extended_denominator;
     logic [38:0] magnitude, normalized;
@@ -34,8 +33,10 @@ module triangle_reciprocal (
     logic [17:0] seed;
     logic [1:0] iteration;
 
-    assign extended_denominator = {denominator_reg[37], denominator_reg};
-    assign magnitude = denominator_reg[37] ? -extended_denominator : extended_denominator;
+    /* Capture the unsigned magnitude on request acceptance. The guard bit
+     * preserves abs(-2^37). NORMALIZE then only finds the leading one and
+     * shifts, without a preceding signed negation in the same cycle. */
+    assign extended_denominator = {denominator_i[37], denominator_i};
     
         always_comb begin
             leading_one = '0;
@@ -110,7 +111,7 @@ module triangle_reciprocal (
         end else begin
             case (state_CRT)
                 R_IDLE: if (req_valid_i & req_ready_o) begin
-                    denominator_reg <= denominator_i;
+                    magnitude <= denominator_i[37] ? -extended_denominator : extended_denominator;
                     format_reg <= den_format_i;
 
                     result_o <= '0;

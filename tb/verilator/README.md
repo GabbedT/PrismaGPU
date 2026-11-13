@@ -3,6 +3,8 @@
 Runs actual RISC-V applications on Spike and the combined GE/RE RTL on
 Verilator. Firmware writes GPU registers and shared GPU memory; the SV wrapper
 feeds GE input, stores its optional primitive output, and services RE DDR.
+The Spike MMIO bridge advances one GPU clock per access and then samples its
+registered read data/access error, matching the shared bus's fixed latency.
 A completed frame is read from the packed RGB444 framebuffer **after writeback**,
 then displayed and saved. There is no VGA scanout or software rasterizer.
 

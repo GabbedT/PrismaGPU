@@ -29,7 +29,7 @@ module geometry_engine #(
 
     /* Direct raster transfer: raster_valid_o && !raster_stall_i. */
     input logic raster_stall_i,
-    /* Input and geometry pipeline drained; excludes packed memory output. */
+    /* Input, geometry pipeline and raster queue drained; excludes packed output. */
     output logic idle_o,
     output logic raster_valid_o,
     output proc_triangle_t raster_triangle_o,
@@ -53,6 +53,7 @@ module geometry_engine #(
     logic datapath_rst_n, pipeline_stall, pipeline_input_stall, unpacker_stall, packer_stall;
     logic busy, vertex_valid, triangle_valid, forward_valid;
     logic unpacker_idle, mode_write_blocked, register_write_error;
+    logic raster_buffer_stall, raster_buffer_valid, output_triangle_accept;
 
     input_vertex_t vertex;
     vertex_t forward_vertex;
@@ -72,8 +73,8 @@ module geometry_engine #(
 
     /* Soft reset flushes data and counters, preserving register configuration */
     assign datapath_rst_n = rst_n_i & !soft_reset;
-    assign pipeline_stall = !enable | (raster_forward ? raster_stall_i : packer_stall);
-    assign idle_o = unpacker_idle & !busy;
+    assign pipeline_stall = !enable | (raster_forward ? raster_buffer_stall : packer_stall);
+    assign idle_o = unpacker_idle & !busy & !raster_buffer_valid;
 
     /* Changing destinations must not redirect a held or queued triangle. */
     assign mode_write_blocked = !idle_o & (register_write_address_i == GE_CTRL) &
@@ -82,8 +83,17 @@ module geometry_engine #(
     assign register_write_error_o = register_write_error | (register_write_i & mode_write_blocked);
     assign unpacker_stall = !enable | !processing | stop_processing | pipeline_input_stall;
 
-    assign raster_triangle_o = triangle;
-    assign raster_valid_o = triangle_valid & enable & raster_forward & datapath_rst_n;
+    assign raster_valid_o = raster_buffer_valid & enable & raster_forward & datapath_rst_n;
+
+    /* Preserve counter semantics: count the selected destination's acceptance,
+     * rather than admission into the new internal raster queue. */
+    assign output_triangle_accept = raster_forward ? (raster_valid_o & !raster_stall_i) :
+                                   (triangle_valid & !pipeline_stall);
+    always_ff @(posedge clk_i) begin
+        if (!datapath_rst_n) output_triangle_count <= '0;
+        else if (enable_pcounters & output_triangle_accept)
+            output_triangle_count <= output_triangle_count + 32'd1;
+    end
 
         /* STOP pauses input consumption; triangles already in the pipeline drain */
         always_ff @(posedge clk_i `ifdef ASYNC or negedge rst_n_i `endif) begin
@@ -133,7 +143,7 @@ module geometry_engine #(
         .width_screen_o  ( width_screen  ),
         .height_screen_o ( height_screen ),
 
-        .busy_i  ( busy   ),
+        .busy_i  ( busy | raster_buffer_valid ),
         .done_i  ( done_i ),
         .error_i ( error  ),
         
@@ -208,11 +218,28 @@ module geometry_engine #(
 
         .enable_pcounters_i         ( enable_pcounters            ),
         .input_triangle_count_o     ( input_triangle_count        ),
-        .output_triangle_count_o    ( output_triangle_count       ),
+        .output_triangle_count_o    (                             ),
         .discarded_triangle_count_o ( discarded_triangle_count    ),
         .stall_cycle_count_o        ( stall_cycle_count           )
     );
 
+
+//====================================================================================
+//      RASTER OUTPUT QUEUE
+//====================================================================================
+
+    /* Keep RE ready/error logic out of GE stalls and DSP clock enables.
+     * Occupancy also guards destination changes and stream-end detection. */
+    raster_triangle_buffer raster_buffer (
+        .clk_i      ( clk_i                                                    ),
+        .rst_n_i    ( datapath_rst_n                                            ),
+        .triangle_i ( triangle                                                 ),
+        .valid_i    ( triangle_valid & enable & raster_forward & datapath_rst_n ),
+        .stall_o    ( raster_buffer_stall                                      ),
+        .triangle_o ( raster_triangle_o                                        ),
+        .valid_o    ( raster_buffer_valid                                      ),
+        .stall_i    ( !enable | !raster_forward | raster_stall_i                 )
+    );
 
 //====================================================================================
 //      PACKER

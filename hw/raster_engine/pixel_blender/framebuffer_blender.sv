@@ -151,34 +151,32 @@ module framebuffer_blender (
      * also fits eight bits. Keep products, sum and quantization on separate
      * clock edges; no multiplier feeds the normalization logic in one cycle. */
     always_ff @(posedge clk_i) begin
-        if (rst_n_i) begin
-            if (enable_i & source_accept) begin
-                pixel_x_CRT <= pixel_x_i;
-                pixel_y_CRT <= pixel_y_i;
-                inverse_alpha_CRT <= ~alpha_i;
+        if (enable_i & source_accept) begin
+            pixel_x_CRT <= pixel_x_i;
+            pixel_y_CRT <= pixel_y_i;
+            inverse_alpha_CRT <= ~alpha_i;
 
-                for (int channel = 0; channel < 3; channel++) begin
-                    source_product_CRT[channel] <= source_rgb[channel] * alpha_i;
-                end
+            for (int channel = 0; channel < 3; channel++) begin
+                source_product_CRT[channel] <= source_rgb[channel] * alpha_i;
             end
+        end
 
-            if (destination_accept) begin
-                for (int channel = 0; channel < 3; channel++) begin
-                    destination_product_CRT[channel] <= destination_rgb[channel] * inverse_alpha_CRT;
-                end
+        if (destination_accept) begin
+            for (int channel = 0; channel < 3; channel++) begin
+                destination_product_CRT[channel] <= destination_rgb[channel] * inverse_alpha_CRT;
             end
+        end
 
-            if (state_CRT == SUM) begin
-                for (int channel = 0; channel < 3; channel++) begin
-                    weighted_sum_CRT[channel] <= source_product_CRT[channel] + destination_product_CRT[channel];
-                end
+        if (state_CRT == SUM) begin
+            for (int channel = 0; channel < 3; channel++) begin
+                weighted_sum_CRT[channel] <= source_product_CRT[channel] + destination_product_CRT[channel];
             end
+        end
 
-            if (state_CRT == QUANTIZE) begin
-                mixed_CRT.red <= quantize_color(weighted_sum_CRT[0]);
-                mixed_CRT.green <= quantize_color(weighted_sum_CRT[1]);
-                mixed_CRT.blue <= quantize_color(weighted_sum_CRT[2]);
-            end
+        if (state_CRT == QUANTIZE) begin
+            mixed_CRT.red <= quantize_color(weighted_sum_CRT[0]);
+            mixed_CRT.green <= quantize_color(weighted_sum_CRT[1]);
+            mixed_CRT.blue <= quantize_color(weighted_sum_CRT[2]);
         end
     end
 

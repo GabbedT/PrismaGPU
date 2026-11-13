@@ -108,7 +108,8 @@ module memory_unit (
     logic write_idle;
 
     logic cancel, clear_fetch;
-    logic framebuffer_reset, framebuffer_error, z_address_valid;
+    logic framebuffer_reset, framebuffer_error, z_address_valid, z_address_error_CRT;
+    logic z_checked_CRT, z_address_valid_CRT;
     logic texture_active;
 
     assign cancel = abort_i | reset_execution_i;
@@ -116,8 +117,7 @@ module memory_unit (
     assign framebuffer_reset = discard_framebuffer_i | invalidate_i | initialize_i;
 
     assign idle_o = read_idle & write_idle & framebuffer_idle_o & !texture_active;
-    assign address_error_o = framebuffer_error | (|read_error) | (|write_error) |
-                             (z_request_i & !z_address_valid & !cancel);
+    assign address_error_o = framebuffer_error | (|read_error) | (|write_error) | z_address_error_CRT;
 
 //====================================================================================
 //      EXECUTION POINTERS
@@ -341,20 +341,44 @@ module memory_unit (
 //      Z BUFFER PORT
 //====================================================================================
 
-    logic [32:0] z_access_end;
+    /* For aligned A, the full-width condition A+16 <= END is exactly
+     * A[31:4] < END[31:4], including an unaligned END and A=0xfffffff0.
+     * Compare word indices directly so the post-mux address does not pass
+     * through an increment before range validation and DDR arbitration. */
+    assign z_address_valid = (z_address_i[3:0] == 0) & (z_address_i >= z_base_i) &
+                            (z_address_i[31:4] < z_end_i[31:4]);
 
-    assign z_access_end = {1'b0, z_address_i} + 33'd16;
-    assign z_address_valid = (z_address_i[3:0] == 0) & (z_address_i >= z_base_i) & (z_access_end <= {1'b0, z_end_i});
+    /* The Z producer holds request, address, direction, data and mask until
+     * ready. Validate this held descriptor one clock before arbitration;
+     * only a checked address may reserve DDR. This separates the clear/line
+     * address mux and range comparisons from the other clients' ready paths. */
+    always_ff @(posedge clk_i) begin
+        if (!rst_n_i | clear_fetch) begin
+            z_checked_CRT <= 1'b0;
+            z_address_valid_CRT <= 1'b0;
+            z_address_error_CRT <= 1'b0;
+        end else begin
+            z_address_error_CRT <= 1'b0;
+            if (!z_request_i || z_ready_o) begin
+                z_checked_CRT <= 1'b0;
+            end else if (!z_checked_CRT) begin
+                z_checked_CRT <= 1'b1;
+                z_address_valid_CRT <= z_address_valid;
+                z_address_error_CRT <= !z_address_valid;
+            end
+        end
+    end
 
-    assign read_request[READ_Z] = !cancel & z_request_i & !z_write_i & z_address_valid;
+    assign read_request[READ_Z] = !cancel & z_request_i & !z_write_i & z_checked_CRT & z_address_valid_CRT;
     assign read_address[READ_Z] = z_address_i;
 
-    assign write_request[WRITE_Z] = !cancel & z_request_i & z_write_i & z_address_valid;
+    assign write_request[WRITE_Z] = !cancel & z_request_i & z_write_i & z_checked_CRT & z_address_valid_CRT;
     assign write_address[WRITE_Z] = z_address_i;
     assign write_data[WRITE_Z] = z_write_data_i;
     assign write_mask[WRITE_Z] = z_mask_i;
 
-    assign z_ready_o = z_address_valid & !cancel & (z_write_i ? write_ready[WRITE_Z] : read_ready[READ_Z]);
+    assign z_ready_o = z_checked_CRT & z_address_valid_CRT & !cancel &
+                       (z_write_i ? write_ready[WRITE_Z] : read_ready[READ_Z]);
     assign z_response_o = !cancel & (read_response[READ_Z] | write_response[WRITE_Z]);
     assign z_read_data_o = read_data;
 

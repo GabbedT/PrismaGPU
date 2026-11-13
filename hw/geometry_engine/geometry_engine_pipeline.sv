@@ -62,11 +62,12 @@ module geometry_engine_pipeline (
 
     vertex_t matrix_vertex;
     logic matrix_valid, matrix_busy;
-    logic matrix_forward_product_ff, matrix_forward_ff;
+    logic matrix_forward_input_ff, matrix_forward_product_ff, matrix_forward_ff;
 
     always_ff @(posedge clk_i) begin
         if (!stall_o) begin
-            matrix_forward_product_ff <= forward_back_i;
+            matrix_forward_input_ff <= forward_back_i;
+            matrix_forward_product_ff <= matrix_forward_input_ff;
             matrix_forward_ff <= matrix_forward_product_ff;
         end
     end
@@ -227,7 +228,7 @@ module geometry_engine_pipeline (
 //      CULL ENGINE
 //====================================================================================
 
-    logic cull_discard;
+    logic cull_discard, cull_busy;
 
     cull_engine triangle_culler (
         .clk_i        ( clk_i              ),
@@ -239,7 +240,8 @@ module geometry_engine_pipeline (
         .cull_mode_i  ( cull_mode_i        ),
         .triangle_o   ( triangle_o         ),
         .valid_o      ( valid_o            ),
-        .discard_o    ( cull_discard       )
+        .discard_o    ( cull_discard       ),
+        .busy_o       ( cull_busy          )
     );
 
         always_comb begin
@@ -268,10 +270,14 @@ module geometry_engine_pipeline (
     assign output_triangle_accept = valid_o & !stall_i;
     assign discarded_triangle_increment = {1'b0, clip_discard} + {1'b0, (cull_discard & !stall_i)};
 
-    /* Include pending matrix results, partial triangles and the final cull/discard stage. */
+    /* Include pending matrix results, partial triangles and the final cull/discard stage.
+     * The input buffer owns its triangle through clip_done; clip_valid_ff
+     * covers the final transferred vertex after that edge. Using this held
+     * ownership instead of combinational clip_valid keeps clip-plane tests
+     * out of BUSY, register access checks and destination-change protection. */
     assign pipeline_busy = (input_vertex_count != '0) | (valid_i & !forward_back_i) | matrix_busy |
-                           triangle_valid | clip_valid | clip_valid_ff | perspective_busy |
-                           perspective_valid_ff | viewport_valid | processed_valid | valid_o | cull_discard;
+                           triangle_valid | clip_valid_ff | perspective_busy |
+                           perspective_valid_ff | viewport_valid | processed_valid | cull_busy;
 
     assign busy_o = pipeline_busy;
 

@@ -22,6 +22,9 @@ module prismaGPU #(
     input logic [3:0] reg_write_strobe_i,
     output logic reg_write_error_o,
 
+    /* A request is sampled on each rising edge. Read data/errors and the
+     * write error describe that edge's access during the following cycle.
+     * Reads may be issued every clock; simultaneous read/write returns old data. */
     input logic reg_read_i,
     input logic [6:0] reg_read_address_i,
     output logic [31:0] reg_read_data_o,
@@ -55,6 +58,8 @@ module prismaGPU #(
     logic ge_interrupt, re_interrupt, ge_idle, re_busy;
     logic ge_write_error, re_write_error, ge_read_error, re_read_error;
     logic [31:0] ge_read_data, re_read_data;
+    logic [31:0] ge_read_data_CRT, re_read_data_CRT;
+    logic read_bank_CRT, read_valid_CRT, read_error_CRT;
     proc_triangle_t raster_triangle;
     logic raster_valid, raster_stall;
 
@@ -64,9 +69,32 @@ module prismaGPU #(
 
     assign interrupt_o        = ge_interrupt | re_interrupt;
     assign busy_o             = !ge_idle | re_busy;
-    assign reg_write_error_o  = ge_write_error | re_write_error;
-    assign reg_read_error_o   = ge_read_error | re_read_error;
-    assign reg_read_data_o    = reg_read_address_i[6] ? re_read_data : ge_read_data;
+
+    /* Register both inputs of the final bank mux. Capturing its selector and
+     * error on the same edge keeps consecutive GE/RE requests aligned and
+     * removes the combinational input-address to output-data path. */
+    always_ff @(posedge clk_i) begin
+        if (!rst_n_i) begin
+            read_valid_CRT <= 1'b0;
+            reg_write_error_o <= 1'b0;
+        end else begin
+            read_valid_CRT <= reg_read_i;
+            reg_write_error_o <= ge_write_error | re_write_error;
+        end
+    end
+
+    /* Payload has no reset: read_valid_CRT guards it after reset and bubbles. */
+    always_ff @(posedge clk_i) begin
+        if (reg_read_i) begin
+            ge_read_data_CRT <= ge_read_data;
+            re_read_data_CRT <= re_read_data;
+            read_bank_CRT <= reg_read_address_i[6];
+            read_error_CRT <= ge_read_error | re_read_error;
+        end
+    end
+
+    assign reg_read_error_o = read_valid_CRT & read_error_CRT;
+    assign reg_read_data_o = read_valid_CRT ? (read_bank_CRT ? re_read_data_CRT : ge_read_data_CRT) : '0;
 
 
 //====================================================================================

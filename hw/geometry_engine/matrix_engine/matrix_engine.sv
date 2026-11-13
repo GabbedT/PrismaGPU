@@ -21,30 +21,35 @@ module matrix_engine (
 
     logic [3:0][24:0] vertex_position;
     logic [3:0][31:0] processed_element;
-    tex_coord_t texture_product_ff, texture_ff;
-    color_t color_product_ff, color_ff;
-    logic valid_product_ff;
+    tex_coord_t texture_input_ff, texture_product_ff, texture_ff;
+    color_t color_input_ff, color_product_ff, color_ff;
+    logic valid_input_ff, valid_product_ff;
 
-    /* Align attributes and valid with the products, then the partial sums. */
+    /* Align attributes and valid with operand capture, products and sums. */
     always_ff @(posedge clk_i) begin
         if (!stall_i) begin
-            texture_product_ff.u <= 32'($signed(vertex_i.tex.u));
-            texture_product_ff.v <= 32'($signed(vertex_i.tex.v));
-            color_product_ff <= vertex_i.col;
+            texture_input_ff.u <= 32'($signed(vertex_i.tex.u));
+            texture_input_ff.v <= 32'($signed(vertex_i.tex.v));
+            texture_product_ff <= texture_input_ff;
             texture_ff <= texture_product_ff;
+
+            color_input_ff <= vertex_i.col;
+            color_product_ff <= color_input_ff;
             color_ff <= color_product_ff;
         end
 
         if (!rst_n_i) begin
+            valid_input_ff <= 1'b0;
             valid_product_ff <= 1'b0;
             valid_o <= 1'b0;
         end else if (!stall_i) begin
-            valid_product_ff <= valid_i;
+            valid_input_ff <= valid_i;
+            valid_product_ff <= valid_input_ff;
             valid_o <= valid_product_ff;
         end
     end
 
-    assign busy_o = valid_product_ff | valid_o;
+    assign busy_o = valid_input_ff | valid_product_ff | valid_o;
 
     /* Explicit indices preserve the packed vertex layout. */
     assign vertex_position[0] = vertex_i.pos.x;

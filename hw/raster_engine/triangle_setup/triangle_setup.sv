@@ -91,8 +91,8 @@ module triangle_setup #(
     localparam int COLOR_SHIFT = 4;
 
     typedef enum logic [3:0] {
-        IDLE, W_CONVERT, VALIDATE, MIN_MAX_ORDER, BBOX, BBOX_CHECK, EDGE_PREP, EDGE_CHECK, NEXT_EDGE,
-        ATTR_SELECT, MATH_PREP, MATH_REQUEST, MATH_WAIT, OUTPUT
+        IDLE, W_CONVERT, VALIDATE, MIN_MAX_ORDER, BBOX, BBOX_CHECK, EDGE_PREP, EDGE_GEOMETRY, EDGE_CHECK, NEXT_EDGE,
+        ATTR_SELECT, MATH_PREP, MATH_REQUEST, MATH_WAIT, MATH_WRITEBACK, OUTPUT
     } setup_state_t;
 
     /* Coordinates have F8; the half-pixel boundary belongs to the lower row */
@@ -262,6 +262,8 @@ module triangle_setup #(
     logic signed [9:0] bb_y_start, bb_y_end, edge_start, edge_end;
     logic [1:0] vertex_a, vertex_b;
     setup_edge_t edge_next;
+    logic signed [18:0] edge_xa, edge_xb;
+    logic signed [17:0] edge_ya, edge_yb;
 
         always_comb begin
             /* Xmin for start of bounding box, round up if the number has fractional part greater than 0.5 */
@@ -325,18 +327,30 @@ module triangle_setup #(
     assign vertex_b = edge_idx_CRT == EDGE_TM ? order_CRT[1] : order_CRT[2];
 
     /* Build edge info */
-    assign edge_next.xa = triangle_CRT.vtx[vertex_a].pos.x;
-    assign edge_next.ya = triangle_CRT.vtx[vertex_a].pos.y;
-    assign edge_next.xb = triangle_CRT.vtx[vertex_b].pos.x;
-    assign edge_next.yb = triangle_CRT.vtx[vertex_b].pos.y;
-    assign edge_next.valid = (triangle_CRT.vtx[vertex_a].pos.y < triangle_CRT.vtx[vertex_b].pos.y) & (edge_start <= edge_end);
+    /* Select endpoints before row rounding/clamping. Payload is guarded by
+     * EDGE_GEOMETRY and needs no reset. One preparation cycle per edge. */
+    always_ff @(posedge clk_i) begin
+        if (state_CRT == EDGE_PREP) begin
+            edge_xa <= triangle_CRT.vtx[vertex_a].pos.x;
+            edge_ya <= triangle_CRT.vtx[vertex_a].pos.y;
+            edge_xb <= triangle_CRT.vtx[vertex_b].pos.x;
+            edge_yb <= triangle_CRT.vtx[vertex_b].pos.y;
+        end
+    end
+
+    assign edge_next.xa = edge_xa;
+    assign edge_next.ya = edge_ya;
+    assign edge_next.xb = edge_xb;
+    assign edge_next.yb = edge_yb;
+    assign edge_next.valid = (edge_ya < edge_yb) & (edge_start <= edge_end);
     assign edge_next.j_start = edge_start[8:0];
     assign edge_next.j_end = edge_end[8:0];
     assign edge_next.is_left = (triangle_CRT.area[37] ^ parity_CRT) ^ (edge_idx_CRT == EDGE_TB);
 
         always_comb begin
-            edge_start = ceil_y(triangle_CRT.vtx[vertex_a].pos.y);
-            edge_end = ceil_y(triangle_CRT.vtx[vertex_b].pos.y) - 10'sd1;
+            edge_start = ceil_y(edge_ya);
+            /* ceil_y(y)-1 = integer_y-(fraction_y <= 0.5), one carry chain. */
+            edge_end = edge_yb[17:8] - (edge_yb[7:0] <= 8'h80);
 
             if (edge_start < $signed({1'b0, bb_y_start_o})) begin
                 edge_start = $signed({1'b0, bb_y_start_o});
@@ -444,6 +458,10 @@ module triangle_setup #(
     status_t math_status;
     logic signed [44:0] color_rounded;
     logic color_overflow;
+    logic [87:0] math_result_raw;
+    status_t math_status_raw;
+    logic signed [44:0] color_rounded_next;
+    logic color_overflow_next;
 
     triangle_math_unit #(.MULTIPLIER_LATENCY(MULTIPLIER_LATENCY)) math_unit (
         .clk_i   ( clk_i           ),
@@ -478,8 +496,8 @@ module triangle_setup #(
         .gy_i ( math_gy ),
 
         .valid_o  ( math_resp_valid ),
-        .result_o ( math_result     ),
-        .status_o ( math_status     ),
+        .result_o ( math_result_raw ),
+        .status_o ( math_status_raw ),
         .busy_o   (                 )
     );
 
@@ -490,18 +508,29 @@ module triangle_setup #(
 
         /* F16 to F12, nearest ties-to-even; check signed range before narrowing */
         always_comb begin
-            color_rounded = ($signed(math_result[43:0]) >>> COLOR_SHIFT) +
-                            ((math_result[3] & ((math_result[2:0] != '0) | math_result[4])) ? 45'sd1 : 45'sd0);
+            color_rounded_next = ($signed(math_result_raw[43:0]) >>> COLOR_SHIFT) +
+                            ((math_result_raw[3] & ((math_result_raw[2:0] != '0) | math_result_raw[4])) ? 45'sd1 : 45'sd0);
 
             if (math_command_CRT == CALC_ATTR_REF) begin
-                color_overflow = color_rounded != $signed(color_rounded[35:0]);
+                color_overflow_next = color_rounded_next != $signed(color_rounded_next[35:0]);
             end else begin
-                color_overflow = color_rounded != $signed(color_rounded[23:0]);
+                color_overflow_next = color_rounded_next != $signed(color_rounded_next[23:0]);
             end
             
-            color_overflow &= color_selected & (math_command_CRT == CALC_GRAD_X | math_command_CRT == CALC_GRAD_Y | math_command_CRT == CALC_ATTR_REF);
+            color_overflow_next &= color_selected & (math_command_CRT == CALC_GRAD_X | math_command_CRT == CALC_GRAD_Y | math_command_CRT == CALC_ATTR_REF);
         end
 
+    /* Capture the complete response, including color conversion and its
+     * overflow flag, before it drives setup state or wide register enables.
+     * MATH_WRITEBACK consumes it on the next cycle; no data/status can split. */
+    always_ff @(posedge clk_i) begin
+        if (math_resp_valid & math_resp_ready) begin
+            math_result <= math_result_raw;
+            math_status <= math_status_raw;
+            color_rounded <= color_rounded_next;
+            color_overflow <= color_overflow_next;
+        end
+    end
 
 //====================================================================================
 //      REGISTERS
@@ -692,6 +721,10 @@ module triangle_setup #(
             end
 
             EDGE_PREP: begin
+                state_NXT = EDGE_GEOMETRY;
+            end
+
+            EDGE_GEOMETRY: begin
                 /* Process the edge */
                 state_NXT = EDGE_CHECK;
 
@@ -749,78 +782,82 @@ module triangle_setup #(
 
             MATH_WAIT: begin
                 if (math_resp_valid & math_resp_ready) begin
-                    if (math_status != STATUS_OK | color_overflow) begin
-                        /* Finish if an error occured */
-                        state_NXT = OUTPUT;
+                    state_NXT = MATH_WRITEBACK;
+                end
+            end
 
-                        math_status_NXT = math_status != STATUS_OK ? math_status : STATUS_OVERFLOW;
-                        setup_status_NXT = SETUP_MATH_ERROR;
-                    end else begin
-                        case (math_command_CRT)
-                            CALC_SLOPE: begin
-                                state_NXT = MATH_PREP;
+            MATH_WRITEBACK: begin
+                if (math_status != STATUS_OK | color_overflow) begin
+                    /* Finish if an error occured */
+                    state_NXT = OUTPUT;
 
-                                edge_NXT[edge_idx_CRT].sx = math_result[31:0];
-                                math_command_NXT = CALC_EDGE_INIT;
+                    math_status_NXT = math_status != STATUS_OK ? math_status : STATUS_OVERFLOW;
+                    setup_status_NXT = SETUP_MATH_ERROR;
+                end else begin
+                    case (math_command_CRT)
+                        CALC_SLOPE: begin
+                            state_NXT = MATH_PREP;
+
+                            edge_NXT[edge_idx_CRT].sx = math_result[31:0];
+                            math_command_NXT = CALC_EDGE_INIT;
+                        end
+
+
+                        CALC_EDGE_INIT: begin
+                            state_NXT = NEXT_EDGE;
+
+                            edge_NXT[edge_idx_CRT].x_initial = math_result[23:0];
+                        end
+
+                        CALC_INV_AREA: begin
+                            state_NXT = ATTR_SELECT;
+
+                            recip_area_NXT = reciprocal_t'(math_result[40:0]);
+                            attr_idx_NXT = ATTR_Z[2:0];
+                        end
+
+                        CALC_GRAD_X: begin
+                            if (color_selected) begin
+                                color_NXT[color_idx].gx = color_rounded[23:0];
+                            end else begin
+                                attr_NXT[plane_idx].gx = math_result[31:0];
                             end
 
+                            state_NXT = MATH_PREP;
 
-                            CALC_EDGE_INIT: begin
-                                state_NXT = NEXT_EDGE;
+                            math_command_NXT = CALC_GRAD_Y;
+                        end
 
-                                edge_NXT[edge_idx_CRT].x_initial = math_result[23:0];
+                        CALC_GRAD_Y: begin
+                            if (color_selected) begin
+                                color_NXT[color_idx].gy = color_rounded[23:0];
+                            end else begin
+                                attr_NXT[plane_idx].gy = math_result[31:0];
                             end
 
-                            CALC_INV_AREA: begin
-                                state_NXT = ATTR_SELECT;
+                            state_NXT = MATH_PREP;
 
-                                recip_area_NXT = reciprocal_t'(math_result[40:0]);
-                                attr_idx_NXT = ATTR_Z[2:0];
+                            math_command_NXT = CALC_ATTR_REF;
+                        end
+
+                        CALC_ATTR_REF: begin
+                            if (color_selected) begin
+                                color_NXT[color_idx].aref = color_rounded[35:0];
+                            end else begin
+                                attr_NXT[plane_idx].aref = math_result[43:0];
                             end
 
-                            CALC_GRAD_X: begin
-                                if (color_selected) begin
-                                    color_NXT[color_idx].gx = color_rounded[23:0];
-                                end else begin
-                                    attr_NXT[plane_idx].gx = math_result[31:0];
-                                end
+                            state_NXT = ATTR_SELECT;
 
-                                state_NXT = MATH_PREP;
+                            attr_idx_NXT = attr_idx_CRT + 1'b1;
+                        end
 
-                                math_command_NXT = CALC_GRAD_Y;
-                            end
-
-                            CALC_GRAD_Y: begin
-                                if (color_selected) begin
-                                    color_NXT[color_idx].gy = color_rounded[23:0];
-                                end else begin
-                                    attr_NXT[plane_idx].gy = math_result[31:0];
-                                end
-
-                                state_NXT = MATH_PREP;
-
-                                math_command_NXT = CALC_ATTR_REF;
-                            end
-
-                            CALC_ATTR_REF: begin
-                                if (color_selected) begin
-                                    color_NXT[color_idx].aref = color_rounded[35:0];
-                                end else begin
-                                    attr_NXT[plane_idx].aref = math_result[43:0];
-                                end
-                                
-                                state_NXT = ATTR_SELECT;
-                                
-                                attr_idx_NXT = attr_idx_CRT + 1'b1;
-                            end
-
-                            default: begin
-                                math_status_NXT = STATUS_INVALID_CMD;
-                                setup_status_NXT = SETUP_MATH_ERROR;
-                                state_NXT = OUTPUT;
-                            end
-                        endcase
-                    end
+                        default: begin
+                            math_status_NXT = STATUS_INVALID_CMD;
+                            setup_status_NXT = SETUP_MATH_ERROR;
+                            state_NXT = OUTPUT;
+                        end
+                    endcase
                 end
             end
 

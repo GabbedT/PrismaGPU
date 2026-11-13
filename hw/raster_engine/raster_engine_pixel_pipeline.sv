@@ -149,7 +149,9 @@ module raster_engine_pixel_pipeline #(
         error_o = (status_o == SETUP_MATH_ERROR) | (status_o == SETUP_INVALID_CONFIG);
         discard_o = status_o != SETUP_OK;
         address_error = config_i.z_test_enable & (config_i.z_buffer_address[3:0] != 0);
-        error_pending = done_o & error_o;
+        error_pending = (done_o & error_o) |
+                        (tail_active_CRT & ((tail_status == SETUP_MATH_ERROR) |
+                                            (tail_status == SETUP_INVALID_CONFIG)));
 
         /* CLEAR_Z owns the depth port only after all triangle work has drained */
         busy_o = (state_CRT != IDLE) | !setup_ready | tail_active_CRT | clear_active_CRT;
@@ -168,11 +170,15 @@ module raster_engine_pixel_pipeline #(
             clear_active_NXT = 1'b0;
         end
 
-        /* Report the older triangle only when its final pixel is accepted downstream */
-        if (tail_active_CRT & pixel_commit) begin
-            tail_remaining_NXT = tail_remaining_CRT - 1'b1;
+        /* A newly retired context may already be empty. Test its captured
+         * count here, keeping the fragment-admission and counter arithmetic
+         * out of completion/status selection. */
+        if (tail_active_CRT) begin
+            if (pixel_commit) begin
+                tail_remaining_NXT = tail_remaining_CRT - 1'b1;
+            end
 
-            if (tail_remaining_CRT == 1) begin
+            if ((tail_remaining_CRT == 0) || (pixel_commit && tail_remaining_CRT == 1)) begin
                 tail_active_NXT = 1'b0;
                 done_NXT = 1'b1;
                 status_NXT = tail_status;
@@ -216,14 +222,8 @@ module raster_engine_pixel_pipeline #(
                 if (!tail_active_CRT) begin
                     retire_context = 1'b1;
                     tail_remaining_NXT = fragments_next;
-                    tail_active_NXT = fragments_next != 0;
+                    tail_active_NXT = 1'b1;
                     state_NXT = IDLE;
-
-                    if (fragments_next == 0) begin
-                        done_NXT = 1'b1;
-                        status_NXT = active_status;
-                        math_status_NXT = active_math_status;
-                    end
                 end
             end
 
@@ -316,7 +316,14 @@ module raster_engine_pixel_pipeline #(
         logic last;
     } span_t;
 
-    span_t pending_span, span_fifo [2], front_span;
+    /* The pending span captures coordinates before address generation. */
+    typedef struct packed {
+        logic [9:0] first_x, last_x;
+        logic [8:0] y;
+    } pending_span_t;
+
+    pending_span_t pending_span;
+    span_t span_fifo [2], front_span;
     logic pending_valid, span_read_ptr, span_write_ptr;
     logic [1:0] span_count;
     logic span_push, span_pop, raster_stall, raster_start, raster_line, raster_done;
@@ -347,15 +354,22 @@ module raster_engine_pixel_pipeline #(
         .done_o        ( raster_done    )
     );
 
+    logic [12:0] z_row_units;
     logic [31:0] z_row_offset;
 
-    /* Compact 16-bit depth rows occupy 640 bytes in QVGA or 1280 bytes in VGA */
+    /* Calculate from the held Y, after rasterization has rounded/clipped X.
+     * The offset is 5*y in 128-byte units (QVGA), doubled for VGA. Thirteen
+     * unsigned bits cover every 9-bit Y in either mode; there is no rounding.
+     * Keep the original 32-bit byte-address wrapping. Configuration remains
+     * stable until the pipeline drains, including while this span is held. */
     always_comb begin
-        z_row_offset = (raster_y << 9) + (raster_y << 7);
+        z_row_units = ({4'b0, pending_span.y} << 2) + {4'b0, pending_span.y};
 
         if (config_i.viewport_size == RE_VIEWPORT_640_480) begin
-            z_row_offset = z_row_offset << 1;
+            z_row_units = z_row_units << 1;
         end
+
+        z_row_offset = {12'b0, z_row_units, 7'b0};
     end
 
     /* Hold one span until the next span or raster_done determines its last flag
@@ -396,11 +410,12 @@ module raster_engine_pixel_pipeline #(
             pending_span.first_x <= raster_x;
             pending_span.last_x <= raster_end_x;
             pending_span.y <= raster_y;
-            pending_span.address <= config_i.z_buffer_address + z_row_offset;
-            pending_span.last <= 1'b0;
         end
         if (span_push) begin
-            span_fifo[span_write_ptr] <= pending_span;
+            span_fifo[span_write_ptr].first_x <= pending_span.first_x;
+            span_fifo[span_write_ptr].last_x <= pending_span.last_x;
+            span_fifo[span_write_ptr].y <= pending_span.y;
+            span_fifo[span_write_ptr].address <= config_i.z_buffer_address + z_row_offset;
             span_fifo[span_write_ptr].last <= raster_done;
         end
     end
@@ -418,6 +433,7 @@ module raster_engine_pixel_pipeline #(
     logic [8:0] source_y;
     logic [3:0][43:0] interpolated_attributes;
     logic [2:0][35:0] interpolated_color;
+    logic interpolation_ready;
 
     /* Start walking when Z has prepared the row, or directly on span_pop without Z */
     assign source_new_line = config_i.z_test_enable ? depth_new_line : span_pop;
@@ -426,7 +442,8 @@ module raster_engine_pixel_pipeline #(
     assign source_y = source_new_line ? (config_i.z_test_enable ? (line_started ? next_y_ff : first_y_ff) : front_span.y) : active_y_ff;
     
     /* Advance coordinates and interpolation only when the pixel consumer accepts */
-    assign pixel_accept = span_active & (config_i.z_test_enable ? !depth_stall : !stall_i);
+    assign pixel_accept = span_active & interpolation_ready &
+                          (config_i.z_test_enable ? !depth_stall : !stall_i);
 
     always_ff @(posedge clk_i) begin
         if (!rst_n_i | raster_start) begin
@@ -491,6 +508,7 @@ module raster_engine_pixel_pipeline #(
         .pixel_y_i             ( source_y                                    ),
         .pixel_valid_i         ( pixel_accept                                ),
         .new_line_i            ( source_new_line                             ),
+        .pixel_ready_o         ( interpolation_ready                         ),
         .pixel_valid_o         (                                             ),
         .attr_o                ( interpolated_attributes                     ),
         .color_o               ( interpolated_color                          ),
@@ -498,15 +516,19 @@ module raster_engine_pixel_pipeline #(
     );
 
 //====================================================================================
-//      DEPTH TEST AND MATCHING PAYLOAD REGISTER
+//      DEPTH TEST AND MATCHING PAYLOAD REGISTERS
 //====================================================================================
 
     logic [15:0] source_z;
-    logic depth_valid, depth_discard, bypass_valid_ff;
+    logic depth_valid, depth_discard, depth_result_load, bypass_valid_ff;
     logic [9:0] depth_x_ff;
     logic [8:0] depth_y_ff;
     logic [2:0][35:0] depth_color_ff;
     logic [2:0][43:0] depth_texture_ff;
+    logic [9:0] fragment_x_ff;
+    logic [8:0] fragment_y_ff;
+    logic [2:0][35:0] fragment_color_ff;
+    logic [2:0][43:0] fragment_texture_ff;
     logic fragment_valid;
 
     /* Saturate signed F16 depth to unsigned Q0.16 without changing fractional scale */
@@ -547,7 +569,7 @@ module raster_engine_pixel_pipeline #(
         .active_x_start_o     ( depth_first_x                        ),
         .active_x_end_o       ( depth_last_x                         ),
         .done_o               ( depth_done                           ),
-        .pixel_valid_i        ( span_active & config_i.z_test_enable ),
+        .pixel_valid_i        ( span_active & interpolation_ready & config_i.z_test_enable ),
         .pixel_x_i            ( source_x                             ),
         .pixel_z_i            ( source_z                             ),
         .test_enable_i        ( config_i.z_test_enable               ),
@@ -555,6 +577,7 @@ module raster_engine_pixel_pipeline #(
         .compare_i            ( config_i.z_compare                   ),
         .stall_o              ( depth_stall                          ),
         .stall_i              ( stall_i                              ),
+        .result_load_o        ( depth_result_load                    ),
         .result_valid_o       (                                      ),
         .pixel_valid_o        ( depth_valid                          ),
         .discard_o            ( depth_discard                        ),
@@ -568,14 +591,28 @@ module raster_engine_pixel_pipeline #(
         .ddr_read_data_i      ( ddr_read_data_i                      )
     );
 
-    /* Capture coordinates and attributes on the same edge as the depth sample
-     * Z can accept into an empty result register even while the output is stalled */
+    /* Keep attributes aligned with both elastic Z stages. A stalled result
+     * holds its payload while the read stage may accept one more pixel.
+     * Without Z, retain the original one-cycle payload bypass. */
     always_ff @(posedge clk_i) begin
-        if (pixel_accept) begin
+        if (pixel_accept & config_i.z_test_enable) begin
             depth_x_ff <= source_x;
             depth_y_ff <= source_y;
             depth_color_ff <= interpolated_color;
             depth_texture_ff <= interpolated_attributes[3:1];
+        end
+        if (config_i.z_test_enable) begin
+            if (depth_result_load) begin
+                fragment_x_ff <= depth_x_ff;
+                fragment_y_ff <= depth_y_ff;
+                fragment_color_ff <= depth_color_ff;
+                fragment_texture_ff <= depth_texture_ff;
+            end
+        end else if (pixel_accept) begin
+            fragment_x_ff <= source_x;
+            fragment_y_ff <= source_y;
+            fragment_color_ff <= interpolated_color;
+            fragment_texture_ff <= interpolated_attributes[3:1];
         end
         /* With Z disabled, this register supplies the matching payload valid */
         if (!rst_n_i) bypass_valid_ff <= 1'b0;
@@ -593,28 +630,28 @@ module raster_engine_pixel_pipeline #(
     logic [15:0] texel;
 
     texturizer texture_transform (
-        .clk_i           ( clk_i                        ),
-        .rst_n_i         ( rst_n_i                      ),
-        .stall_i         ( stall_i                      ),
-        .stall_o         (                              ),
-        .texture_en_i    ( config_i.texture_en          ),
-        .texture_size_i  ( config_i.texture_size        ),
-        .pixel_valid_i   ( fragment_valid               ),
-        .pixel_x_i       ( depth_x_ff                   ),
-        .pixel_y_i       ( depth_y_ff                   ),
-        .color_i         ( depth_color_ff               ),
-        .u_over_w_i      ( $signed(depth_texture_ff[0]) ),
-        .v_over_w_i      ( $signed(depth_texture_ff[1]) ),
-        .inv_w_i         ( $signed(depth_texture_ff[2]) ),
-        .write_en_i      ( texture_write_en_i           ),
-        .write_address_i ( texture_write_address_i      ),
-        .write_data_i    ( texture_write_data_i         ),
-        .pixel_valid_o   ( textured_valid               ),
-        .pixel_x_o       ( textured_x                   ),
-        .pixel_y_o       ( textured_y                   ),
-        .color_o         ( textured_color               ),
-        .texel_o         ( texel                        ),
-        .texture_valid_o ( texture_valid                )
+        .clk_i           ( clk_i                           ),
+        .rst_n_i         ( rst_n_i                         ),
+        .stall_i         ( stall_i                         ),
+        .stall_o         (                                 ),
+        .texture_en_i    ( config_i.texture_en             ),
+        .texture_size_i  ( config_i.texture_size           ),
+        .pixel_valid_i   ( fragment_valid                  ),
+        .pixel_x_i       ( fragment_x_ff                   ),
+        .pixel_y_i       ( fragment_y_ff                   ),
+        .color_i         ( fragment_color_ff               ),
+        .u_over_w_i      ( $signed(fragment_texture_ff[0]) ),
+        .v_over_w_i      ( $signed(fragment_texture_ff[1]) ),
+        .inv_w_i         ( $signed(fragment_texture_ff[2]) ),
+        .write_en_i      ( texture_write_en_i              ),
+        .write_address_i ( texture_write_address_i         ),
+        .write_data_i    ( texture_write_data_i            ),
+        .pixel_valid_o   ( textured_valid                  ),
+        .pixel_x_o       ( textured_x                      ),
+        .pixel_y_o       ( textured_y                      ),
+        .color_o         ( textured_color                  ),
+        .texel_o         ( texel                           ),
+        .texture_valid_o ( texture_valid                   )
     );
 
 //====================================================================================

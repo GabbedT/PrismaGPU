@@ -56,7 +56,7 @@ module clipper (
 //====================================================================================
 
     typedef enum logic [3:0] {
-        IDLE, INIT, READ_FIRST, READ_NEXT, TEST_INTERSECT,
+        IDLE, INIT, READ_FIRST, READ_NEXT, CLASSIFY, TEST_INTERSECT,
         INTERPOLATE, PUSH_SECOND, ADVANCE, NEXT_PLANE, COMPLETE, CLEANUP
     } fsm_state_t;
 
@@ -127,31 +127,32 @@ module clipper (
     logic crt_on_plane, nxt_on_plane;
 
     clip_tester crt_tester (
-        .x_i ( crt_vertex_NXT.pos.x ),
-        .y_i ( crt_vertex_NXT.pos.y ),
-        .z_i ( crt_vertex_NXT.pos.z ),
-        .w_i ( crt_vertex_NXT.pos.w ),
+        .x_i ( crt_vertex_CRT.pos.x ),
+        .y_i ( crt_vertex_CRT.pos.y ),
+        .z_i ( crt_vertex_CRT.pos.z ),
+        .w_i ( crt_vertex_CRT.pos.w ),
 
         .clip_code_o ( crt_clip_code )
     );
 
     clip_tester nxt_tester (
-        .x_i ( nxt_vertex_NXT.pos.x ),
-        .y_i ( nxt_vertex_NXT.pos.y ),
-        .z_i ( nxt_vertex_NXT.pos.z ),
-        .w_i ( nxt_vertex_NXT.pos.w ),
+        .x_i ( nxt_vertex_CRT.pos.x ),
+        .y_i ( nxt_vertex_CRT.pos.y ),
+        .z_i ( nxt_vertex_CRT.pos.z ),
+        .w_i ( nxt_vertex_CRT.pos.w ),
 
         .clip_code_o ( nxt_clip_code )
     );
 
-    /* Classify alongside the vertex registers, before FIFO write control. */
+    /* Classify the captured vertices after the FIFO read, before deciding
+     * the edge action. Keep the FWFT mux out of plane arithmetic/reduction. */
     always_ff @(posedge clk_i) begin
         if (!stall_i) begin
-            crt_is_inside <= !crt_clip_code[plane_NXT];
-            nxt_is_inside <= !nxt_clip_code[plane_NXT];
+            crt_is_inside <= !crt_clip_code[plane_CRT];
+            nxt_is_inside <= !nxt_clip_code[plane_CRT];
 
-            crt_on_plane <= on_plane(plane_NXT, crt_vertex_NXT.pos);
-            nxt_on_plane <= on_plane(plane_NXT, nxt_vertex_NXT.pos);
+            crt_on_plane <= on_plane(plane_CRT, crt_vertex_CRT.pos);
+            nxt_on_plane <= on_plane(plane_CRT, nxt_vertex_CRT.pos);
         end
     end
 
@@ -228,13 +229,13 @@ module clipper (
 
             READ_NEXT: begin
                 if (read_count_CRT == source_count_CRT) begin
-                    state_NXT = TEST_INTERSECT;
+                    state_NXT = CLASSIFY;
 
                     /* Last iteration to close the loop is on the first vertex */
                     nxt_vertex_NXT = first_vertex_CRT;
                     closing_edge_NXT = 1'b1;
                 end else if (!fifo_empty_i) begin
-                    state_NXT = TEST_INTERSECT;
+                    state_NXT = CLASSIFY;
 
                     fifo_read_o = 1'b1;
                     
@@ -243,6 +244,8 @@ module clipper (
                     closing_edge_NXT = 1'b0;
                 end
             end
+
+            CLASSIFY: state_NXT = TEST_INTERSECT;
 
             TEST_INTERSECT: begin
                 if (crt_is_inside & !nxt_is_inside & crt_on_plane) begin

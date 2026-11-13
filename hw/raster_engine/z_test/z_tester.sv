@@ -28,9 +28,8 @@ module z_tester #(
     output logic [9:0] active_x_end_o,
     output logic done_o,
 
-    /* Hold the input pixel while stall_o is high. No fragment FIFO.
-     * Payload attributes outside this module follow the same acceptance
-     * and output stall signals as the one-cycle depth comparison. */
+    /* Hold input while stall_o is high. Read and result stages are elastic;
+     * result_load_o advances matching attributes into the result stage. */
     input logic pixel_valid_i,
     input logic [9:0] pixel_x_i,
     input logic [Z_WIDTH - 1:0] pixel_z_i,
@@ -39,6 +38,7 @@ module z_tester #(
     input logic [2:0] compare_i,
     output logic stall_o,
     input logic stall_i,
+    output logic result_load_o,
     output logic result_valid_o,
     output logic pixel_valid_o,
     output logic discard_o,
@@ -186,6 +186,7 @@ module z_tester #(
         .pixel_x_i         ( pixel_x_i                      ),
         .pixel_z_i         ( pixel_z_i                      ),
         .pixel_last_i      ( pixel_x_i == active_x_end_o    ),
+        .result_load_o     ( result_load_o                 ),
         .result_valid_o    ( result_valid_o                 ),
         .pass_o            ( pixel_valid_o                  ),
         .discard_o         ( discard_o                      ),

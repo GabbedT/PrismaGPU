@@ -243,55 +243,66 @@ module triangle_math_unit #(
 
     operand_sel_t add_a_sel, add_b_sel;
     logic signed [87:0] add_a, add_b;
+    logic signed [87:0] add_a_next, add_b_next;
     logic signed [88:0] add_result;
-    logic subtract;
+    logic subtract, subtract_next;
 
     assign add_a_sel = instruction.src_a;
     assign add_b_sel = instruction.src_b;
-    assign subtract = instruction.op == SUB;
+    assign subtract_next = instruction.op == SUB;
 
         /* Select register source */
         always_comb begin
             /* Default Value */
-            add_a = '0;
-            add_b = '0;
+            add_a_next = '0;
+            add_b_next = '0;
 
             case (add_a_sel)
-                SRC_X0: add_a = x0_i <<< EDGE_ALIGN;
+                SRC_X0: add_a_next = x0_i <<< EDGE_ALIGN;
 
-                SRC_X1: add_a = x1_i;
+                SRC_X1: add_a_next = x1_i;
 
-                SRC_X2: add_a = x2_i;
+                SRC_X2: add_a_next = x2_i;
 
-                SRC_Y1: add_a = y1_i;
+                SRC_Y1: add_a_next = y1_i;
 
-                SRC_Y2: add_a = y2_i;
+                SRC_Y2: add_a_next = y2_i;
 
-                SRC_XREF: add_a = xref_i;
+                SRC_XREF: add_a_next = xref_i;
 
-                SRC_YREF: add_a = yref_i;
+                SRC_YREF: add_a_next = yref_i;
 
-                SRC_A0: add_a = a0_i <<< ATTR_ALIGN;
+                SRC_A0: add_a_next = a0_i <<< ATTR_ALIGN;
 
-                SRC_A1: add_a = a1_i;
+                SRC_A1: add_a_next = a1_i;
 
-                SRC_A2: add_a = a2_i;
+                SRC_A2: add_a_next = a2_i;
 
-                SRC_T2: add_a = t2;
+                SRC_T2: add_a_next = t2;
             endcase
 
             case (add_b_sel)
-                SRC_X0: add_b = x0_i;
+                SRC_X0: add_b_next = x0_i;
 
-                SRC_Y0: add_b = y0_i;
+                SRC_Y0: add_b_next = y0_i;
 
-                SRC_A0: add_b = a0_i;
+                SRC_A0: add_b_next = a0_i;
 
-                SRC_T0: add_b = t0;
+                SRC_T0: add_b_next = t0;
 
-                SRC_T1: add_b = t1;
+                SRC_T1: add_b_next = t1;
             endcase
         end
+
+    /* Reuse VALIDATE to separate source selection from the guarded adder.
+     * Retain all 88 signed bits and the existing 89-bit overflow check. */
+    always_ff @(posedge clk_i) begin
+        if (state_CRT == VALIDATE) begin
+            add_a <= add_a_next;
+            add_b <= add_b_next;
+            subtract <= subtract_next;
+        end
+    end
 
     /* One shared carry chain for signed addition and subtraction, with a guard bit */
     assign add_result = {add_a[87], add_a} + ({add_b[87], add_b} ^ {89{subtract}}) + subtract;
@@ -304,7 +315,8 @@ module triangle_math_unit #(
     operand_sel_t recip_sel;
     reciprocal_t active_reciprocal, recip_result;
     logic signed [87:0] recip_wide;
-    logic recip_req_valid, recip_req_ready, recip_resp_valid, recip_resp_ready, recip_div_zero, issue_error;
+    logic recip_req_valid, recip_req_ready, recip_resp_valid, recip_resp_ready, recip_div_zero;
+    logic issue_error, issue_error_next;
     denominator_format_t den_format;
 
 
@@ -419,20 +431,27 @@ module triangle_math_unit #(
 
     always_comb begin
         /* Check that last instruction has OUT as register */
-        issue_error = !program_valid | (instruction.last == LAST_OP & instruction.dst != DST_OUT);
+        issue_error_next = !program_valid | (instruction.last == LAST_OP & instruction.dst != DST_OUT);
 
         /* Any instruction that is not RECIP needs to have both sources valid */
         if (instruction.op != RECIP & (instruction.src_a == SRC_UNUSED | instruction.src_b == SRC_UNUSED)) begin
-            issue_error = 1'b1;
+            issue_error_next = 1'b1;
         end
 
         /* Check bit fit */
         if (instruction.op == MUL & (!fits(mul_a_wide, 54) | !fits(mul_b_wide, 33))) begin
-            issue_error = 1'b1;
+            issue_error_next = 1'b1;
         end
 
         if (instruction.op == RECIP & !fits(recip_wide, 38)) begin
-            issue_error = 1'b1;
+            issue_error_next = 1'b1;
+        end
+    end
+
+    /* Validate after command/PC or temporary-register updates, before ISSUE */
+    always_ff @(posedge clk_i) begin
+        if (state_CRT == VALIDATE) begin
+            issue_error <= issue_error_next;
         end
     end
 
@@ -443,13 +462,17 @@ module triangle_math_unit #(
 
     logic signed [87:0] write_data, raw_result, raw_result_next, scaled_result, shifted_result;
     logic signed [88:0] rounded_result, converted_result;
-    logic conversion_error, converted_error, guard_bit, sticky_bit;
-    logic round_increment, conversion_needed, capture_result;
+    logic conversion_error, converted_error, guard_bit, sticky_bit, write_fits;
+    logic round_increment, conversion_needed, conversion_needed_next, capture_result;
+    logic negate_result, negate_result_next;
     status_t raw_status, raw_status_next, write_status;
-    logic signed [8:0] shift_count;
-    integer output_width;
+    logic signed [8:0] shift_count, shift_count_next;
+    integer output_width, output_width_next;
 
-    assign conversion_needed = instruction.last == LAST_OP & command_reg != CALC_INV_AREA;
+    assign conversion_needed_next = instruction.last == LAST_OP & command_reg != CALC_INV_AREA;
+    assign negate_result_next = instruction.last == LAST_OP &&
+                               (command_reg == CALC_SLOPE || command_reg == CALC_GRAD_X || command_reg == CALC_GRAD_Y) &&
+                               active_reciprocal.negative;
     assign capture_result = (state_CRT == ISSUE & !issue_error & (instruction.op == ADD | instruction.op == SUB)) |
                             (state_CRT == WAIT_RESULT & ((instruction.op == MUL & mul_resp_valid) | (instruction.op == RECIP & recip_resp_valid)));
 
@@ -477,9 +500,7 @@ module triangle_math_unit #(
                 end
             endcase
 
-            if (instruction.last == LAST_OP &&
-                (command_reg == CALC_SLOPE || command_reg == CALC_GRAD_X || command_reg == CALC_GRAD_Y) &&
-                active_reciprocal.negative) begin
+            if (negate_result) begin
                 raw_result_next = -raw_result_next;
             end
         end
@@ -503,32 +524,46 @@ module triangle_math_unit #(
 
     always_comb begin
         /* Default Values */
-        shift_count = 0;
-        output_width = 88;
+        shift_count_next = 0;
+        output_width_next = 88;
 
         if (instruction.last == LAST_OP) begin
             case (command_reg)
                 CALC_SLOPE, CALC_GRAD_X, CALC_GRAD_Y: begin
-                    shift_count = (command_reg == CALC_SLOPE ? SLOPE_RECIP_SHIFT : GRAD_RECIP_SHIFT) - $signed(active_reciprocal.exponent);
-                    output_width = 32;
+                    shift_count_next = (command_reg == CALC_SLOPE ? SLOPE_RECIP_SHIFT : GRAD_RECIP_SHIFT) - $signed(active_reciprocal.exponent);
+                    output_width_next = 32;
                 end
 
                 CALC_EDGE_INIT: begin
-                    shift_count = FINAL_SHIFT;
-                    output_width = 24;
+                    shift_count_next = FINAL_SHIFT;
+                    output_width_next = 24;
                 end
 
                 CALC_ATTR_REF: begin
-                    shift_count = FINAL_SHIFT;
-                    output_width = 44;
+                    shift_count_next = FINAL_SHIFT;
+                    output_width_next = 44;
                 end
             endcase
         end else if (instruction.op == SUB & instruction.src_b == SRC_X0) begin
-            output_width = 19;
+            output_width_next = 19;
         end else if (instruction.op == SUB & instruction.src_b == SRC_Y0) begin
-            output_width = 18;
+            output_width_next = 18;
         end else if (instruction.op == SUB & instruction.src_b == SRC_A0) begin
-            output_width = 33;
+            output_width_next = 33;
+        end
+    end
+
+    /* These parameters depend only on the current instruction and its held
+     * sources. Prepare them alongside operand validation, before arithmetic.
+     * No command/exponent subtraction then feeds the barrel shift, rounding
+     * or overflow reduction in the same cycle. VALIDATE always precedes use,
+     * so the payload needs no reset and no additional execution cycle. */
+    always_ff @(posedge clk_i) begin
+        if (state_CRT == VALIDATE) begin
+            shift_count <= shift_count_next;
+            output_width <= output_width_next;
+            conversion_needed <= conversion_needed_next;
+            negate_result <= negate_result_next;
         end
     end
 
@@ -583,10 +618,27 @@ module triangle_math_unit #(
 
     end
 
+    /* Each microprogram uses one of these fixed signed formats. Select among
+     * constant sign-extension checks instead of shifting an 88-bit result by
+     * a runtime output_width before the overflow reduction. Invalid widths
+     * fail closed. There is no truncation, rounding or extra cycle here. */
+    always_comb begin
+        case (output_width)
+            18: write_fits = fits(write_data, 18);
+            19: write_fits = fits(write_data, 19);
+            24: write_fits = fits(write_data, 24);
+            32: write_fits = fits(write_data, 32);
+            33: write_fits = fits(write_data, 33);
+            44: write_fits = fits(write_data, 44);
+            88: write_fits = 1'b1;
+            default: write_fits = 1'b0;
+        endcase
+    end
+
         always_comb begin
             write_status = raw_status;
 
-            if (converted_error || converted_result[88] != converted_result[87] || !fits(write_data, output_width)) begin
+            if (converted_error || converted_result[88] != converted_result[87] || !write_fits) begin
                 write_status = STATUS_OVERFLOW;
             end
 
@@ -636,9 +688,11 @@ module triangle_math_unit #(
             case (state_CRT)
                 IDLE: begin
                     if (command_valid_i & command_ready_o) begin
-                        state_NXT = command_i > CALC_ATTR_REF || !coordinates_valid ? RESPONSE : ISSUE;
+                        state_NXT = command_i > CALC_ATTR_REF || !coordinates_valid ? RESPONSE : VALIDATE;
                     end
                 end
+
+                VALIDATE: state_NXT = ISSUE;
 
                 ISSUE: begin
                     if (issue_error) begin
@@ -673,7 +727,7 @@ module triangle_math_unit #(
                 ROUND: state_NXT = WRITEBACK;
 
                 WRITEBACK: begin
-                    state_NXT = write_status != STATUS_OK || instruction.last == LAST_OP ? RESPONSE : ISSUE;
+                    state_NXT = write_status != STATUS_OK || instruction.last == LAST_OP ? RESPONSE : VALIDATE;
                 end
 
                 RESPONSE: begin

@@ -17,7 +17,8 @@ module cull_engine (
     /* Output */
     output proc_triangle_t triangle_o,
     output logic valid_o,
-    output logic discard_o
+    output logic discard_o,
+    output logic busy_o
 );
 
 //====================================================================================
@@ -75,11 +76,8 @@ module cull_engine (
 
     assign triangle_area = mul_1_ff - mul_2_ff;
 
-    /* The registered products and vertices belong to the same triangle. */
-    assign triangle_o = '{area: triangle_area, vtx: vertices_ff};
-
-
     logic zero_area, ccw, cw;
+    logic keep_triangle;
 
     assign zero_area = triangle_area == 38'sd0;
     assign ccw = triangle_area < 38'sd0;
@@ -89,33 +87,49 @@ module cull_engine (
     /* Selection */
     always_comb begin
         /* Default Value */
-        valid_o = 1'b0;
+        keep_triangle = 1'b0;
 
         if (valid_ff) begin
             if (zero_area) begin
-                valid_o = 1'b0;
+                keep_triangle = 1'b0;
             end else begin
                 case ({front_face_i, cull_mode_i})
-                    {CW, FRONT}: valid_o = ccw;
+                    {CW, FRONT}: keep_triangle = ccw;
 
-                    {CW, BACK}: valid_o = cw;
+                    {CW, BACK}: keep_triangle = cw;
 
-                    {CCW, FRONT}: valid_o = cw;
+                    {CCW, FRONT}: keep_triangle = cw;
 
-                    {CCW, BACK}: valid_o = ccw;
+                    {CCW, BACK}: keep_triangle = ccw;
 
-                    {CW, NONE}: valid_o = 1'b1;
+                    {CW, NONE}: keep_triangle = 1'b1;
 
-                    {CCW, NONE}: valid_o = 1'b1;
+                    {CCW, NONE}: keep_triangle = 1'b1;
 
-                    default: valid_o = 1'b0;
+                    default: keep_triangle = 1'b0;
                 endcase
             end
         end
     end
 
-    /* A valid input triangle that produces no output was culled or degenerate. */
-    assign discard_o = valid_ff & !valid_o;
+    /* Capture area, vertices and classification together before they drive
+     * the output queue. One additional advancing cycle, one triangle/clock.
+     * Both stages hold on stall; reset only needs to invalidate their work. */
+    always_ff @(posedge clk_i) begin
+        if (!stall_i) begin
+            triangle_o <= '{area: triangle_area, vtx: vertices_ff};
+        end
+
+        if (!rst_n_i) begin
+            valid_o <= 1'b0;
+            discard_o <= 1'b0;
+        end else if (!stall_i) begin
+            valid_o <= keep_triangle;
+            discard_o <= valid_ff & !keep_triangle;
+        end
+    end
+
+    assign busy_o = valid_ff | valid_o | discard_o;
 
 endmodule : cull_engine
 
