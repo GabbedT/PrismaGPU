@@ -287,6 +287,16 @@ is preserved by soft reset. It selects the destination after culling;
 both does not send newly consumed vertices to the raster engine. See
 :doc:`packer` for the direct transfer contract and mode changes.
 
+While the input, geometry pipeline, or raster queue holds work, a write that
+strobes byte 1 and changes ``raster_forward`` rejects the entire ``GE_CTRL``
+transaction. No other control field changes and no START, STOP, or soft-reset
+pulse is issued by that rejected write. The write reports an error. Writes
+that keep the destination unchanged, or do not strobe byte 1, remain allowed.
+Matrix, viewport, and other register writes retain their normal byte-strobe
+behavior while the engine is busy. The register bank applies the destination
+guard only to ``GE_CTRL``, keeping these other write enables independent of
+the pipeline's busy and backpressure signals; no bus cycle is added.
+
 GE_STATUS: live status
 ----------------------
 

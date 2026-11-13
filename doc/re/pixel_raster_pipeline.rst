@@ -111,6 +111,15 @@ discard the draw. Texture sampling requires perspective correction;
 The geometry engine supplies already transformed positions and encoded
 positive reciprocal W values, as documented by :doc:`../ge/overview`.
 
+Setup reuses the shared math unit for edge slopes and initial X values. A
+valid vertical edge has an exact zero slope; its initial X is obtained by
+widening its signed F8 endpoint to 24 bits and shifting left four places
+to F12. This bypasses the slope and edge-initialization commands, saving
+50 setup cycles with the behavioral multiplier or 56 with the three-stage
+FPGA multiplier. Horizontal or otherwise inactive edges are rejected before
+this shortcut. No additional multiplier or descriptor storage is used.
+Completed descriptors retain the same output-backpressure and reset behavior.
+
 Span scheduling and backpressure
 --------------------------------
 
